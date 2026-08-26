@@ -264,6 +264,15 @@ class HostGroup:
     os: str = ""
     v4_start: IPv4Address | None = None
     v6_start: IPv6Address | None = None
+    v6_prefix: str = ""
+    """Mirrors the v4 host octet into the v6 address rather than counting.
+
+    The observed range addresses `25.X.17.13` as `fd81:25:X:17::13` — the last group
+    is the v4 octet written out, not the thirteenth address in the block. Counting
+    from a start address gives `::d` for the thirteenth host, which is a different
+    machine. Set this to `fd81:25:42:17` and the group reproduces the real convention;
+    leave it empty and `v6_start` counts."""
+
     services: tuple[str, ...] = ()
     """Overrides the host type's services when set. Empty means use the type's."""
 
@@ -285,6 +294,17 @@ class HostGroup:
             for n in range(self.count)
         )
 
+    def _v6_for(self, v4: IPv4Address | None, offset: int) -> IPv6Address | None:
+        if self.v6_prefix and v4 is not None:
+            last_octet = str(v4).rsplit(".", 1)[-1]
+            try:
+                return IPv6Address(f"{self.v6_prefix}::{last_octet}")
+            except ValueError:
+                return None
+        if self.v6_start is not None:
+            return self.v6_start + offset
+        return None
+
     def expand(self, catalogue_services: tuple[str, ...] = ()) -> tuple[Host, ...]:
         """The individual machines. Addresses run consecutively from the start address.
 
@@ -296,7 +316,7 @@ class HostGroup:
         hosts = []
         for offset, name in enumerate(self.names()):
             v4 = self.v4_start + offset if self.v4_start is not None else None
-            v6 = self.v6_start + offset if self.v6_start is not None else None
+            v6 = self._v6_for(v4, offset)
             hosts.append(
                 Host(
                     hostname=name,

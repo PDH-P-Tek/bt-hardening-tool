@@ -218,3 +218,42 @@ def test_groups_and_individual_hosts_are_read_as_one_list() -> None:
     )
     everything = firewall.all_hosts(catalogue())
     assert [h.hostname for h in everything] == ["npc-server", "ws101", "ws102", "ws103"]
+
+
+def test_a_group_can_mirror_the_v4_octet_into_the_v6_address() -> None:
+    """The observed range writes `25.X.17.13` as `fd81:25:X:17::13`.
+
+    The last v6 group is the v4 octet written out, not the thirteenth address in the
+    block. Counting from a start address gives `::d` for the thirteenth host — a
+    different machine, addressed plausibly, which nothing downstream would question.
+    """
+    group = HostGroup(
+        name_prefix="ws2",
+        count=5,
+        first_index=1,
+        segment_role="ws",
+        v4_start=IPv4Address("25.42.17.13"),
+        v6_prefix="fd81:25:42:17",
+    )
+    hosts = group.expand()
+    assert [str(h.v4) for h in hosts][:2] == ["25.42.17.13", "25.42.17.14"]
+    assert [str(h.v6) for h in hosts][:2] == ["fd81:25:42:17::13", "fd81:25:42:17::14"]
+    assert str(hosts[-1].v6) == "fd81:25:42:17::17"
+
+
+def test_counting_and_mirroring_genuinely_differ() -> None:
+    """Stated as its own test because the two look identical for the first nine hosts."""
+    counted = HostGroup(
+        name_prefix="ws",
+        count=12,
+        v4_start=IPv4Address("25.42.9.2"),
+        v6_start=IPv6Address("fd81:25:42:9::2"),
+    ).expand()
+    mirrored = HostGroup(
+        name_prefix="ws",
+        count=12,
+        v4_start=IPv4Address("25.42.9.2"),
+        v6_prefix="fd81:25:42:9",
+    ).expand()
+    assert str(counted[9].v6) == "fd81:25:42:9::b"
+    assert str(mirrored[9].v6) == "fd81:25:42:9::11"

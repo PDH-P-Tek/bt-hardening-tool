@@ -31,11 +31,16 @@ from btht.app.model.edit import (
     remove_firewall,
     remove_host,
     remove_host_group,
+    remove_host_type,
     remove_interface,
+    remove_service,
+    rename_service,
     update_firewall,
     update_host,
     update_host_group,
+    update_host_type,
     update_interface,
+    update_service,
 )
 from btht.app.model.estate import (
     Estate,
@@ -62,7 +67,16 @@ from btht.app.model.policy import (
     validate_policy,
 )
 from btht.app.model.services import (
+    Catalogue,
+    Confidence,
+    HostType,
+    Service,
+)
+from btht.app.model.services import (
     load_catalogue as load_services,
+)
+from btht.app.model.services import (
+    save_catalogue as save_services,
 )
 from btht.app.validate.rules import Context, Severity, run_all
 from btht.app.web.topology import View, layout, render_svg
@@ -1051,3 +1065,264 @@ def delete_enclave(slug: str, enclave: str) -> RedirectResponse:
     except InUse as exc:
         return _back(slug, str(exc), "err")
     return _back(slug, f"enclave {enclave} removed")
+
+
+# ===========================================================================
+#  The catalogue — Phase 9.5
+# ===========================================================================
+
+
+def _any_estate() -> Estate:
+    """Reference checking needs an estate; use whichever ones exist.
+
+    Removing a service is refused when something uses it, and "something" spans every
+    estate on this install rather than only the one being looked at.
+    """
+    from dataclasses import replace as dc_replace
+
+    combined = Estate(team=0, team_padded="0")
+    if not ESTATES.is_dir():
+        return combined
+    firewalls: list[Firewall] = []
+    for path in sorted(ESTATES.glob("*.yaml")):
+        try:
+            firewalls.extend(load_estate(path).firewalls)
+        except (EstateFileError, ValueError):
+            continue
+    return dc_replace(combined, firewalls=tuple(firewalls))
+
+
+@router.get("/services", response_class=HTMLResponse)
+def services_page(request: Request) -> HTMLResponse:
+    catalogue = load_services(SERVICE_CATALOGUE)
+    return render(
+        request,
+        "services.html",
+        services=[catalogue.services[n] for n in sorted(catalogue.services)],
+        host_types=[catalogue.host_types[n] for n in sorted(catalogue.host_types)],
+        service_names=sorted(catalogue.services),
+        messages=(
+            [(request.query_params.get("k", "ok"), request.query_params["m"])]
+            if request.query_params.get("m")
+            else []
+        ),
+    )
+
+
+def _services_back(message: str = "", kind: str = "ok") -> RedirectResponse:
+    suffix = f"?m={message}&k={kind}" if message else ""
+    return RedirectResponse(f"/services{suffix}", status_code=303)
+
+
+@router.post("/services/new")
+def add_catalogue_service(
+    name: str = Form(...),
+    tcp: str = Form(""),
+    udp: str = Form(""),
+    confidence: str = Form("standard"),
+    descr: str = Form(""),
+    note: str = Form(""),
+) -> RedirectResponse:
+    catalogue = load_services(SERVICE_CATALOGUE)
+    service = Service(
+        name=name.strip(),
+        tcp=_ports_from(tcp),
+        udp=_ports_from(udp),
+        descr=descr.strip(),
+        confidence=Confidence(confidence),
+        note=note.strip(),
+        custom=True,
+    )
+    save_services(update_service(catalogue, service), SERVICE_CATALOGUE)
+    return _services_back(f"{service.name} added")
+
+
+@router.get("/services/edit/{name}", response_class=HTMLResponse)
+def edit_service_form(request: Request, name: str) -> HTMLResponse:
+    catalogue = load_services(SERVICE_CATALOGUE)
+    service = catalogue.services.get(name)
+    if service is None:
+        return _services_page_error(request, f"no service {name}")
+    return render(
+        request,
+        "edit.html",
+        slug="",
+        title=f"service {name}",
+        action=f"/services/edit/{name}",
+        delete_action=f"/services/delete/{name}",
+        delete_warning="Refused while any host or host type still runs it.",
+        fields=[
+            {
+                "name": "name",
+                "label": "name",
+                "value": service.name,
+                "hint": "Renaming carries every host and host type that runs it.",
+            },
+            {"name": "tcp", "label": "tcp ports", "value": ", ".join(str(p) for p in service.tcp)},
+            {"name": "udp", "label": "udp ports", "value": ", ".join(str(p) for p in service.udp)},
+            {"name": "tcp_dynamic", "label": "tcp range", "value": service.tcp_dynamic},
+            {
+                "name": "confidence",
+                "label": "confidence",
+                "value": service.confidence.value,
+                "options": ["standard", "assumed", "unverified"],
+            },
+            {"name": "descr", "label": "description", "value": service.descr},
+            {"name": "note", "label": "note", "value": service.note},
+        ],
+    )
+
+
+def _services_page_error(request: Request, message: str) -> HTMLResponse:
+    catalogue = load_services(SERVICE_CATALOGUE)
+    return render(
+        request,
+        "services.html",
+        services=[catalogue.services[n] for n in sorted(catalogue.services)],
+        host_types=[catalogue.host_types[n] for n in sorted(catalogue.host_types)],
+        service_names=sorted(catalogue.services),
+        messages=[("err", message)],
+    )
+
+
+@router.post("/services/edit/{name}")
+def edit_service(
+    name: str,
+    new_name: str = Form("", alias="name"),
+    tcp: str = Form(""),
+    udp: str = Form(""),
+    tcp_dynamic: str = Form(""),
+    confidence: str = Form("standard"),
+    descr: str = Form(""),
+    note: str = Form(""),
+) -> RedirectResponse:
+    catalogue = load_services(SERVICE_CATALOGUE)
+    estate = _any_estate()
+    renamed = new_name.strip() or name
+
+    if renamed != name:
+        catalogue, _estate, outcome = rename_service(catalogue, estate, name, renamed)
+        message = outcome.summary
+    else:
+        message = f"{name} updated"
+
+    service = catalogue.services[renamed]
+    updated = Service(
+        name=renamed,
+        tcp=_ports_from(tcp),
+        udp=_ports_from(udp),
+        tcp_dynamic=tcp_dynamic.strip(),
+        descr=descr.strip(),
+        confidence=Confidence(confidence),
+        note=note.strip(),
+        custom=service.custom,
+    )
+    save_services(update_service(catalogue, updated), SERVICE_CATALOGUE)
+    return _services_back(message)
+
+
+@router.post("/services/delete/{name}")
+def delete_service(name: str) -> RedirectResponse:
+    try:
+        reduced = remove_service(load_services(SERVICE_CATALOGUE), _any_estate(), name)
+    except InUse as exc:
+        return _services_back(str(exc), "err")
+    save_services(reduced, SERVICE_CATALOGUE)
+    return _services_back(f"{name} removed")
+
+
+@router.post("/services/types/new")
+def add_host_type(
+    name: str = Form(...),
+    default_os: str = Form(""),
+    services: str = Form(""),
+    descr: str = Form(""),
+) -> RedirectResponse:
+    catalogue = load_services(SERVICE_CATALOGUE)
+    host_type = HostType(
+        name=name.strip(),
+        services=_split(services),
+        default_os=default_os.strip(),
+        descr=descr.strip(),
+        custom=True,
+    )
+    unknown = [s for s in host_type.services if s not in catalogue.services]
+    if unknown:
+        return _services_back(
+            "these services are not defined yet: "
+            + ", ".join(unknown)
+            + ". Add them first, or the type promises ports the tool cannot open.",
+            "err",
+        )
+    save_services(update_host_type(catalogue, host_type), SERVICE_CATALOGUE)
+    return _services_back(f"{host_type.name} added")
+
+
+@router.get("/services/types/edit/{name}", response_class=HTMLResponse)
+def edit_host_type_form(request: Request, name: str) -> HTMLResponse:
+    catalogue = load_services(SERVICE_CATALOGUE)
+    host_type = catalogue.host_types.get(name)
+    if host_type is None:
+        return _services_page_error(request, f"no host type {name}")
+    return render(
+        request,
+        "edit.html",
+        slug="",
+        title=f"host type {name}",
+        action=f"/services/types/edit/{name}",
+        delete_action=f"/services/types/delete/{name}",
+        delete_warning="Refused while any host or group still uses it.",
+        fields=[
+            {"name": "name", "label": "name", "value": host_type.name},
+            {
+                "name": "default_os",
+                "label": "default operating system",
+                "value": host_type.default_os,
+            },
+            {
+                "name": "services",
+                "label": "services",
+                "value": ", ".join(host_type.services),
+                "hint": "known: " + ", ".join(sorted(catalogue.services)),
+            },
+            {"name": "descr", "label": "description", "value": host_type.descr},
+        ],
+    )
+
+
+@router.post("/services/types/edit/{name}")
+def edit_host_type(
+    name: str,
+    new_name: str = Form("", alias="name"),
+    default_os: str = Form(""),
+    services: str = Form(""),
+    descr: str = Form(""),
+) -> RedirectResponse:
+    catalogue = load_services(SERVICE_CATALOGUE)
+    existing = catalogue.host_types.get(name)
+    host_type = HostType(
+        name=new_name.strip() or name,
+        services=_split(services),
+        default_os=default_os.strip(),
+        descr=descr.strip(),
+        custom=existing.custom if existing else True,
+    )
+    updated = update_host_type(catalogue, host_type)
+    if host_type.name != name:
+        updated = Catalogue(
+            services=updated.services,
+            host_types={k: v for k, v in updated.host_types.items() if k != name},
+            hostname_patterns=updated.hostname_patterns,
+        )
+    save_services(updated, SERVICE_CATALOGUE)
+    return _services_back(f"{name} updated")
+
+
+@router.post("/services/types/delete/{name}")
+def delete_host_type(name: str) -> RedirectResponse:
+    try:
+        reduced = remove_host_type(load_services(SERVICE_CATALOGUE), _any_estate(), name)
+    except InUse as exc:
+        return _services_back(str(exc), "err")
+    save_services(reduced, SERVICE_CATALOGUE)
+    return _services_back(f"{name} removed")

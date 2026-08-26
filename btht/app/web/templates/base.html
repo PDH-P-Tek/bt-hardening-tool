@@ -56,7 +56,7 @@ nav{font-size:13px;margin-bottom:18px}
 </head>
 <body>
 <div class="wrap">
-<nav><a href="/">estates</a>{% block nav %}{% endblock %}</nav>
+<nav><a href="/">estates</a> · <a href="/services">services</a>{% block nav %}{% endblock %}</nav>
 {% for kind, message in messages %}<div class="note {{ kind }}">{{ message }}</div>{% endfor %}
 {% block body %}{% endblock %}
 </div>

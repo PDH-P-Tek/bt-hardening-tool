@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block nav %} / <strong>services</strong>{% endblock %}
+{% block body %}
+<h1>Services and host types</h1>
+<p class="sub">What the tool knows a machine can run. Shipped entries are suggestions;
+anything bespoke is yours to define, and neither is more real than the other.</p>
+
+<div class="panel">
+<h2>Services — {{ services|length }}</h2>
+<table>
+  <tr><th>name</th><th>ports</th><th>confidence</th><th>note</th><th></th></tr>
+  {% for s in services %}
+  <tr>
+    <td>{{ s.name }}{% if s.custom %} <span class="tag">yours</span>{% endif %}</td>
+    <td><code>{{ s.summary }}</code></td>
+    <td>
+      {% if s.confidence.value == "standard" %}<span class="tag">standard</span>
+      {% elif s.confidence.value == "assumed" %}<span class="tag warn">assumed</span>
+      {% else %}<span class="tag warn">unverified</span>{% endif %}
+    </td>
+    <td class="sub">{{ s.note }}</td>
+    <td><a href="/services/edit/{{ s.name|urlencode }}">edit</a></td>
+  </tr>
+  {% endfor %}
+</table>
+</div>
+
+<div class="panel">
+<h2>Add a service</h2>
+<p class="sub">Every estate has something bespoke on an odd port. A catalogue that only
+knows well-known ports makes the operator lie about what they are running.</p>
+<form method="post" action="/services/new">
+  <div class="row">
+    <div><label>name, as you would say it</label><input name="name" required></div>
+    <div><label>tcp ports, comma separated</label><input name="tcp" placeholder="8443, 9000"></div>
+    <div><label>udp ports</label><input name="udp"></div>
+  </div>
+  <div class="row">
+    <div><label>confidence</label>
+      <select name="confidence">
+        <option value="standard">standard — well known</option>
+        <option value="assumed">assumed — plausible, verify it</option>
+        <option value="unverified">unverified — genuinely unknown</option>
+      </select></div>
+    <div><label>description</label><input name="descr"></div>
+  </div>
+  <label>note — anything a tired reader needs to know when they pick this</label>
+  <input name="note">
+  <button type="submit">Add service</button>
+</form>
+</div>
+
+<div class="panel">
+<h2>Host types — {{ host_types|length }}</h2>
+<table>
+  <tr><th>type</th><th>default OS</th><th>services</th><th></th></tr>
+  {% for t in host_types %}
+  <tr>
+    <td>{{ t.name }}{% if t.custom %} <span class="tag">yours</span>{% endif %}</td>
+    <td>{{ t.default_os }}</td>
+    <td class="sub">{{ t.services|join(", ") }}</td>
+    <td><a href="/services/types/edit/{{ t.name|urlencode }}">edit</a></td>
+  </tr>
+  {% endfor %}
+</table>
+</div>
+
+<div class="panel">
+<h2>Add a host type</h2>
+<form method="post" action="/services/types/new">
+  <div class="row">
+    <div><label>name</label><input name="name" placeholder="uav_ground_station" required></div>
+    <div><label>default operating system</label><input name="default_os"></div>
+  </div>
+  <label>services it runs, comma separated</label>
+  <input name="services" placeholder="SSH, HTTPS">
+  <div class="sub" style="margin-top:4px">known: {{ service_names|join(", ") }}</div>
+  <label>description</label><input name="descr">
+  <button type="submit">Add host type</button>
+</form>
+</div>
+{% endblock %}
