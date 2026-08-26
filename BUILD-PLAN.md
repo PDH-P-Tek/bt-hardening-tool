@@ -51,7 +51,7 @@ uses at 6.1 — write it once.
 
 | # | Step | Source | Done when |
 |---|---|---|---|
-| 1.1 | pfSense config ingest → domain objects. `<aliases>`, `<filter>`, `<nat>` and the fixed fact list, nothing else | §5.4 | Round-trips a fixture; retains nothing outside the allow-list |
+| 1.1 | ✅ pfSense config ingest → domain objects. `<aliases>`, `<filter>`, `<nat>` and the fixed fact list, nothing else | §5.4 | Round-trips a fixture; retains nothing outside the allow-list |
 | 1.2 | Interface role derivation and `estate_side` | §4.1, §4.2 | `dsoc` `lan`→`svrs` / `opt1`→`ws`; `mcu` classifies host_nation from its WAN |
 | 1.3 | Normalisation and the two-tier fingerprint | §6.1, §6.2 | **Property tests pass.** `any`/`0.0.0.0/0`, `53`/`53-53`, ordering permutations collapse to one fingerprint |
 | 1.4 | Seed profile load and classification | §4.3 | Classifies a fixture, reports match tier per item |
@@ -177,6 +177,7 @@ None of these stop the build. They stop specific steps.
 | Question | Blocks | Resolution |
 |---|---|---|
 | `Q2` — pfSense section-restore behaviour | **8.1** | Test on a CE 2.8.1 box. Nobody needs to answer it; someone needs to try it |
+| `Q12` — which boolean convention rule-level `<disabled>` / `<log>` use | Correctness of every parsed rule's active state | Same box: disable a rule, enable logging on another, export, read what the GUI wrote |
 | `MONITORING Q2(a)` — does pfSense preserve `from=`/`command=` in `authorized_keys` | Collector access restriction (setup S4) | Same box, same sitting |
 | `H-Q4` — is disabling anti-lockout permitted | `H-PF-01` | Exercise lead. **Ask early** — it is the pivot the management-restriction story turns on |
 | `H-Q5` — is there a remote syslog target | Logging checks in 7.1 | Blue Team lead |

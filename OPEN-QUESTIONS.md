@@ -117,3 +117,26 @@ This matters because two DCM26 enclaves shipped `BLOCK_ALL_FW_EGRESS`, which fai
 Is the server configured for passive mode, and what range does it use? No ISA check was observed against it, so this is a usersim-experience question rather than an automated-scoring one — but usersim complaints are scored.
 
 `EVIDENCE.md` E5: the DCM26 team believed a port forward on 21 made FTP work. It did not — a wide-open WAN catch-all did.
+
+---
+
+## Q12 — pfSense uses two boolean conventions, and they contradict · Needed
+
+`BASELINE-ANALYSIS.md` §1 establishes the rule the parser follows: **empty element is
+false, `yes` is true, presence means nothing.** It is right for the fields it was drawn
+from — `noantilockout`, `disablenatreflection`.
+
+But the GUI appears to write rule-level flags the other way, as bare `<disabled></disabled>`
+and `<log></log>`, where presence *is* the value. Under the documented rule those read as
+false, and a disabled rule would be treated as live.
+
+The parser keeps the two apart as `pf_bool()` and `pf_flag_present()` rather than one
+function that guesses, so which convention a field was read under is visible at the call
+site. Rule-level `<disabled>` and `<log>` currently use presence.
+
+**Resolution: on the CE 2.8.1 box, disable a rule and enable logging on another, export,
+and read what the GUI wrote.** Same box as Q2 and `MONITORING.md` Q2 — one sitting closes
+all three.
+
+Erring towards "disabled" is the safe direction: an inactive rule read as live surfaces in
+triage, where a live rule read as inactive would be silently dropped from the output.

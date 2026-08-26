@@ -23,8 +23,10 @@
     <webgui>
       <protocol>https</protocol>
     </webgui>
-    <filterdescriptions>1</filterdescriptions>
   </system>
+  <syslog>
+    <filterdescriptions>1</filterdescriptions>
+  </syslog>
   <interfaces>
     <wan>
       <if>vmx0</if>
@@ -63,6 +65,19 @@
       <subnetv6>64</subnetv6>
     </opt2>
   </interfaces>
+  <installedpackages>
+    <frr>
+      <frrbfdpeers>
+        <config><peer>25.42.0.1</peer></config>
+        <config><peer>25.42.0.2</peer></config>
+        <config><peer>fd81:25:42::1</peer></config>
+        <config><peer>fd81:25:42::2</peer></config>
+      </frrbfdpeers>
+      <frrospfd>
+        <routerid>25.42.0.10</routerid>
+      </frrospfd>
+    </frr>
+  </installedpackages>
   <aliases>
     <alias>
       <name>Routers</name>

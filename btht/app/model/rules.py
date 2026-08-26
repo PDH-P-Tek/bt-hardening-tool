@@ -158,14 +158,21 @@ class Alias:
 @dataclass(frozen=True, slots=True)
 class Rule:
     action: Action
-    interface: str
-    """Derived role token, or `floating`. Emission maps it back to an ifname."""
+    interfaces: tuple[str, ...] = ()
+    """Derived role tokens. Plural: a floating rule names several, and the strict
+    fingerprint hashes them sorted (`SPEC.md` §6.2). Emission maps each back to an
+    ifname; nothing else may look at ifnames."""
 
     family: Family = Family.INET46
     direction: Direction = Direction.IN
     quick: bool = False
     floating: bool = False
     protocol: str | None = None
+    icmp_types: tuple[str, ...] = ()
+    """Sorted into the fingerprint. `V-ICMP6-MINIMUM` reads this."""
+
+    state_type: str = ""
+    """pfSense `<statetype>`. In the strict fingerprint, so it is parsed, not dropped."""
     source: Endpoint = AnyEndpoint()
     destination: Endpoint = AnyEndpoint()
     source_ports: tuple[PortSpec, ...] = ()
@@ -184,6 +191,8 @@ class Rule:
 @dataclass(frozen=True, slots=True)
 class NatRule:
     interface: str
+    """Single, unlike a filter rule: a port forward binds to one interface."""
+
     protocol: str | None
     source: Endpoint
     destination: Endpoint

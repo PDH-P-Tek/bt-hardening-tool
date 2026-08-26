@@ -19,8 +19,10 @@
     <webgui>
       <protocol>https</protocol>
     </webgui>
-    <filterdescriptions>1</filterdescriptions>
   </system>
+  <syslog>
+    <filterdescriptions>1</filterdescriptions>
+  </syslog>
   <interfaces>
     <wan>
       <if>vmx0</if>
