@@ -80,11 +80,15 @@ def test_all_four_sections_present_in_a_full_export(enclave: str) -> None:
 def test_partial_export_records_what_was_missing() -> None:
     """A section export is normal. A silently empty section is not."""
     parsed = parse_file(BASELINE / "do-baseline.xml")
-    only_aliases = "<pfsense><aliases>" + "".join(
-        f"<alias><name>{a.name}</name><type>{a.type}</type>"
-        f"<address>{' '.join(a.entries)}</address></alias>"
-        for a in parsed.aliases
-    ) + "</aliases></pfsense>"
+    only_aliases = (
+        "<pfsense><aliases>"
+        + "".join(
+            f"<alias><name>{a.name}</name><type>{a.type}</type>"
+            f"<address>{' '.join(a.entries)}</address></alias>"
+            for a in parsed.aliases
+        )
+        + "</aliases></pfsense>"
+    )
     from btht.app.ingest.pfsense import parse_string
 
     partial = parse_string(only_aliases)

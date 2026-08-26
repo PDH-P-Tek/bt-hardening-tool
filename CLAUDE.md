@@ -84,8 +84,9 @@ Two are worth knowing before you touch the pfSense adapter: whether pfSense pres
 
 ## Repository state and commands
 
-Phase 0 of `BUILD-PLAN.md` is in progress: toolchain, CI and the shared inventory
-model exist; nothing else does yet. `uv` manages the environment, Python is pinned to
+Phase 0 is complete and Phase 1 is in progress: the pfSense parser and role derivation
+exist, with `python -m btht map <config>...` printing an estate's interface map.
+Normalisation and fingerprinting (1.3) are next, and gate all of Phase 2. `uv` manages the environment, Python is pinned to
 3.12 in `.python-version` (the spec floor is 3.11).
 
 ```bash
