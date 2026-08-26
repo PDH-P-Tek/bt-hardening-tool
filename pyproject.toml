@@ -46,7 +46,18 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 [tool.ruff.lint.flake8-bugbear]
 # FastAPI declares request parameters as call defaults; that is the framework's
 # idiom, not the mutable-default bug B008 exists to catch.
-extend-immutable-calls = ["fastapi.Depends", "fastapi.File", "fastapi.Form", "fastapi.Query"]
+# FastAPI declares request parameters as call defaults. The btht entries are frozen
+# dataclasses — immutable by construction, which is what B008 is protecting against.
+extend-immutable-calls = [
+    "fastapi.Depends",
+    "fastapi.File",
+    "fastapi.Form",
+    "fastapi.Query",
+    "btht.app.model.policy.Selector",
+    "btht.app.model.policy.EgressPolicy",
+    "btht.app.model.policy.Options",
+    "btht.app.model.rules.NatConfig",
+]
 
 [tool.mypy]
 python_version = "3.11"
