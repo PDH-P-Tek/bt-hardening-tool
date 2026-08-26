@@ -7,7 +7,7 @@ on something outside the code.
 **This does not replace those lists.** Every step cites its source, and the source
 stays authoritative on *what* the step must do. This file is authoritative on *when*.
 
-Status: **Phases 0–5 complete.** The generator ships a checklist behind a diff gate; the monitor collects, diffs and triages per item. Phase 6 next — pfSense and FRR adapters.
+Status: **Phases 0–7 complete.** Phase 8 is next and **8.1 is blocked**: Tier 2 XML cannot ship until the CE 2.8.1 box answers Q2, Q12 and MONITORING Q2.
 
 ---
 
@@ -137,7 +137,7 @@ and 1.3, nothing from the generator's front half.
 | # | Step | Source | Done when |
 |---|---|---|---|
 | 6.1 | ✅ pfSense adapter — **reuses the Phase 1.1 parser** | §6.1 | `M-ACC-07`, `M-FW-01/06/07` reporting |
-| 6.2 | Services, listening ports, boot hooks, filesystem canaries | §5.4–5.6 | Coverage broadened across all platforms |
+| 6.2 | ✅ Services, listening ports, boot hooks, filesystem canaries | §5.4–5.6 | Coverage broadened across all platforms |
 | 6.3 | ✅ FRR adapter | §6.3 | `show running-config` diffed; `show ip route` displayed and never diffed |
 
 ---
@@ -149,8 +149,8 @@ two evaluations. Useful on day one, before anything is attacked.
 
 | # | Step | Source | Done when |
 |---|---|---|---|
-| 7.1 | `H-SSH-*`, `H-PF-*`, `H-FW-*`, `H-ACC-*` over the collected item set | `HARDENING.md` §5–8 | Each check reports pass / fail / not-applicable with remediation shown, never applied |
-| 7.2 | `H-FRR-*` | `HARDENING.md` §9 | Scoping depends on **H-Q2** |
+| 7.1 | ✅ `H-SSH-*`, `H-PF-*`, `H-FW-*`, `H-ACC-*` over the collected item set | `HARDENING.md` §5–8 | Each check reports pass / fail / not-applicable with remediation shown, never applied |
+| 7.2 | ⚠️ `H-FRR-*` — implemented; scoping still gated on **H-Q2** | `HARDENING.md` §9 | Scoping depends on **H-Q2** |
 
 > `HARDENING.md` §4 orders what the *operator* does on day one. It is not a build order —
 > do not confuse the two.

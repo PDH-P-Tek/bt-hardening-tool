@@ -27,6 +27,16 @@ COMMANDS = {
     "M-ACC-08": "cat /etc/sudoers /etc/sudoers.d/*",
     "M-SCHED-01": "crontab -l -u root",
     "M-SCHED-02": "cat /etc/crontab",
+    "M-SVC-01": "ss -tulpn",
+    "M-SVC-02": "systemctl list-units --type=service --state=running --no-pager --plain",
+    "M-BOOT-01": "systemctl list-unit-files --type=service --state=enabled --no-pager --plain",
+    "M-BOOT-02": "cat /etc/rc.local",
+    "M-FS-01": "find /etc /usr/local/sbin -maxdepth 2 -newer /etc/hostname -type f",
+    "M-INT-01": "sha256sum /usr/local/sbin/btmon-collect",
+    # `sshd -T` rather than the file: Include and Match blocks resolve, and hashing
+    # sshd_config alone misses anything in an included file — which is also where
+    # somebody would put a change they did not want read.
+    "H-SSH-CONFIG": "sshd -T",
     "M-STATE-UPTIME": "uptime",
     "M-STATE-WHO": "who",
 }
@@ -154,6 +164,111 @@ def _cron(output: str, collector: str) -> list[Item]:
     return items
 
 
+def _listening(output: str) -> list[Item]:
+    """A port that opened is how a foothold becomes reachable — `M-SVC-01`.
+
+    Config rather than state on purpose: the *set* of listening ports is intended to
+    be stable, even though the connections through them are not.
+    """
+    items = []
+    for line in output.splitlines()[1:]:
+        parts = line.split()
+        if len(parts) < 5:
+            continue
+        local = parts[4]
+        items.append(
+            Item(
+                key=f"listen:{parts[0]}:{local}",
+                collector="M-SVC-01",
+                kind=Kind.CONFIG,
+                value=f"{parts[0]} {local} {' '.join(parts[6:]) if len(parts) > 6 else ''}".strip(),
+                severity=Severity.HIGH,
+                label=f"listening on {local}",
+            )
+        )
+    return items
+
+
+def _units(output: str, collector: str, label: str, severity: Severity) -> list[Item]:
+    items = []
+    for line in output.splitlines():
+        parts = line.split()
+        if not parts or not parts[0].endswith(".service"):
+            continue
+        items.append(
+            Item(
+                key=f"unit:{collector}:{parts[0]}",
+                collector=collector,
+                kind=Kind.CONFIG,
+                value=" ".join(parts[1:3]),
+                severity=severity,
+                label=f"{label} {parts[0]}",
+            )
+        )
+    return items
+
+
+def _boot_hook(output: str) -> list[Item]:
+    """`rc.local` and friends: run at boot, owned by nobody, rarely read — `M-BOOT-02`."""
+    items = []
+    for line in output.splitlines():
+        entry = line.strip()
+        if not entry or entry.startswith("#"):
+            continue
+        items.append(
+            Item(
+                key=f"boot:{entry}",
+                collector="M-BOOT-02",
+                kind=Kind.CONFIG,
+                value=entry,
+                severity=Severity.CRITICAL,
+                label="boot-time command",
+            )
+        )
+    return items
+
+
+def _canaries(output: str) -> list[Item]:
+    """Files changed since the reference point — `M-FS-01`.
+
+    Not a integrity database, and not pretending to be one: a cheap tripwire over the
+    directories where persistence is usually written.
+    """
+    return [
+        Item(
+            key=f"canary:{path.strip()}",
+            collector="M-FS-01",
+            kind=Kind.CONFIG,
+            value="modified",
+            severity=Severity.MEDIUM,
+            label=f"changed file {path.strip()}",
+        )
+        for path in output.splitlines()
+        if path.strip()
+    ]
+
+
+def _collector_integrity(output: str) -> list[Item]:
+    """The collector script itself — `M-INT-01`.
+
+    An intruder who edits what the monitor runs owns what the monitor reports, so its
+    hash is watched like anything else on the box.
+    """
+    digest_value = output.split()[0] if output.split() else ""
+    if not digest_value:
+        return []
+    return [
+        Item(
+            key="integrity:collector",
+            collector="M-INT-01",
+            kind=Kind.CONFIG,
+            value=digest_value,
+            severity=Severity.CRITICAL,
+            label="collector script hash",
+        )
+    ]
+
+
 def collect(transport: Transport, secret: str = "btht") -> Collection:
     """Poll one Linux host. A host that stops answering is itself the alarm.
 
@@ -183,6 +298,42 @@ def collect(transport: Transport, secret: str = "btht") -> Collection:
             cron = transport.run(COMMANDS[collector])
             if cron.ok:
                 items += _cron(cron.stdout, collector)
+
+        for collector, parser in (
+            ("M-SVC-01", _listening),
+            ("M-BOOT-02", _boot_hook),
+            ("M-FS-01", _canaries),
+            ("M-INT-01", _collector_integrity),
+        ):
+            result = transport.run(COMMANDS[collector])
+            if result.ok:
+                items += parser(result.stdout)
+
+        sshd = transport.run(COMMANDS["H-SSH-CONFIG"])
+        if sshd.ok:
+            for line in sshd.stdout.splitlines():
+                setting = line.strip()
+                if not setting:
+                    continue
+                name = setting.split(" ", 1)[0]
+                items.append(
+                    Item(
+                        key=f"sshd:{name}",
+                        collector="H-SSH-CONFIG",
+                        kind=Kind.CONFIG,
+                        value=setting,
+                        severity=Severity.HIGH,
+                        label=f"sshd {name}",
+                    )
+                )
+
+        for collector, label, severity in (
+            ("M-SVC-02", "running service", Severity.HIGH),
+            ("M-BOOT-01", "enabled at boot", Severity.CRITICAL),
+        ):
+            result = transport.run(COMMANDS[collector])
+            if result.ok:
+                items += _units(result.stdout, collector, label, severity)
 
         # State. Displayed, never diffed — see `items.Kind`.
         for collector, label in (("M-STATE-UPTIME", "uptime"), ("M-STATE-WHO", "logged in")):
