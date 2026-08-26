@@ -156,6 +156,7 @@ def load_estate(path: Path) -> Estate:
     roles = data.get("interface_roles", {}) or {}
     return Estate(
         team=int(data.get("team", 0)),
+        team_name=str(data.get("team_name", "")),
         team_padded=str(data.get("team_padded", "")),
         role_vocabulary=tuple(str(r) for r in roles.get("recognised", ())),
         firewalls=tuple(firewalls),
@@ -308,7 +309,8 @@ def estate_to_document(
     document: dict[str, Any] = {
         "version": SCHEMA_VERSION,
         "team": estate.team,
-        "team_padded": estate.team_padded,
+        **({"team_name": estate.team_name} if estate.team_name else {}),
+        **({"team_padded": estate.team_padded} if estate.team_padded else {}),
         "interface_roles": {
             "recognised": list(estate.role_vocabulary),
             "enclave_tokens": list(enclave_tokens),

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% set page = "range" %}
 {% block body %}
 <h1>Set up the range</h1>
 <p class="sub">A team has one range. This is it — declare it once, then everything the
@@ -10,13 +11,14 @@ structure: the enclave names, the segment names and what runs where are all your
 <div class="panel">
 <form method="post" action="/range/create">
   <div class="row">
-    <div><label>team number</label><input name="team" type="number" min="0" value="0" required></div>
-    <div><label>team number as written in names</label><input name="team_padded" placeholder="07"></div>
+    <div><label>what the team calls itself</label><input name="team_name" placeholder="BT14"></div>
+    <div><label>team number</label>
+      <input name="team" type="number" min="0" value="0" required></div>
   </div>
-  <label>segment names your range uses, comma separated</label>
+  <label>segment types this range has, comma separated</label>
   <input name="vocabulary" placeholder="wan, ws, svrs, dmz, uav">
-  <label>prefixes to strip from interface descriptions, if your naming has any</label>
-  <input name="tokens" placeholder="bt_wan_, do_, ds_">
+  <div class="sub" style="margin-top:3px">Your names for the kinds of network segment.
+  Not the pfSense interface names — you can change these later.</div>
   <button class="btn" type="submit">Create the range</button>
 </form>
 </div>

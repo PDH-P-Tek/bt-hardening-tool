@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% set page = "range" %}
+{% block body %}
+<h1>Range settings</h1>
+<p class="sub">Four things, and only the first two are ever needed.</p>
+
+<div class="panel">
+<form method="post" action="/range/settings">
+  <label for="team_name">What the team calls itself</label>
+  <input id="team_name" name="team_name" value="{{ estate.team_name }}" placeholder="BT14">
+  <div class="sub" style="margin-top:3px">Display only. Nothing keys on it.</div>
+
+  <label for="team">Team number</label>
+  <input id="team" name="team" type="number" min="0" value="{{ estate.team }}" required>
+  <div class="sub" style="margin-top:3px">
+    It appears in almost every address in the range — <code>25.{{ estate.team }}.9.2</code>,
+    <code>198.19.{{ estate.team }}.0/24</code>. The tool uses it to recognise the shipped
+    baseline whichever team you are.
+  </div>
+
+  <label for="team_padded">The number as it appears in host and domain names</label>
+  <input id="team_padded" name="team_padded" value="{{ estate.team_padded }}"
+         placeholder="{{ estate.padded_default() }}">
+  <div class="sub" style="margin-top:3px">
+    Leave this blank unless your team is single-digit. For most teams it is identical to
+    the number above — team 14 is <code>14</code> in both. The documents write a
+    single-digit team unpadded in addresses and zero-padded in names
+    (<code>do.07.dcm.ex</code>), and whether that is really so is still an open question,
+    so the tool asks rather than assuming. Blank means
+    <code>{{ estate.padded_default() }}</code>.
+  </div>
+
+  <label for="vocabulary">Segment types this range has</label>
+  <input id="vocabulary" name="vocabulary"
+         value="{{ estate.role_vocabulary|join(', ') }}"
+         placeholder="ws, svrs, dmz, uav">
+  <div class="sub" style="margin-top:3px">
+    Your names for the kinds of network segment — workstations, servers, DMZ, UAV. Each
+    firewall interface gets assigned one of these. <strong>Not</strong> the pfSense
+    interface names: <code>lan</code> is workstations on most enclaves and servers on at
+    least one, so an interface called <code>lan</code> tells you nothing about what is on
+    it. An interface whose segment is not in this list is shown to you for a decision
+    rather than guessed at.
+  </div>
+
+  <label for="tokens">Prefixes to strip from interface descriptions</label>
+  <input id="tokens" name="tokens" value="{{ enclave_tokens|join(', ') }}"
+         placeholder="bt_wan_, do_, ds_">
+  <div class="sub" style="margin-top:3px">
+    Optional. If your firewalls describe an interface as <code>do_svrs</code>, stripping
+    <code>do_</code> leaves <code>svrs</code> and the tool can propose the segment when
+    you import a configuration. Leave it blank and you assign segments by hand.
+  </div>
+
+  <button class="btn" type="submit">Save settings</button>
+</form>
+</div>
+{% endblock %}

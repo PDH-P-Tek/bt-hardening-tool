@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block nav %} / <a href="/range">{{ slug }}</a> / <strong>{{ enclave }}</strong>{% endblock %}
+{% set page = "range" %}
 {% block body %}
 {% if segment %}<h1>{{ enclave }} — segment {{ step + 1 }} of {{ total }}</h1>
 {% else %}<h1>{{ enclave }} — egress</h1>{% endif %}

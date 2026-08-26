@@ -138,6 +138,7 @@ def _range_page(
 @router.post("/range/create")
 def create_estate(
     team: int = Form(0),
+    team_name: str = Form(""),
     team_padded: str = Form(""),
     vocabulary: str = Form(""),
     tokens: str = Form(""),
@@ -145,7 +146,8 @@ def create_estate(
     path = estate_path()
     estate = Estate(
         team=team,
-        team_padded=team_padded.strip() or str(team),
+        team_name=team_name.strip(),
+        team_padded=team_padded.strip(),
         role_vocabulary=_split(vocabulary),
     )
     save_estate(estate, path, enclave_tokens=_split(tokens))
@@ -1032,7 +1034,7 @@ def _any_estate() -> Estate:
     """
     from dataclasses import replace as dc_replace
 
-    combined = Estate(team=0, team_padded="0")
+    combined = Estate(team=0)
     if not ESTATES.is_dir():
         return combined
     firewalls: list[Firewall] = []
@@ -1278,3 +1280,36 @@ def delete_host_type(name: str) -> RedirectResponse:
         return _services_back(str(exc), "err")
     save_services(reduced, SERVICE_CATALOGUE)
     return _services_back(f"{name} removed")
+
+
+@router.get("/range/settings", response_class=HTMLResponse)
+def range_settings_form(request: Request) -> HTMLResponse:
+    path = estate_path()
+    return render(
+        request,
+        "settings.html",
+        estate=load_estate(path),
+        enclave_tokens=convention_of(path).enclave_tokens,
+    )
+
+
+@router.post("/range/settings")
+def save_range_settings(
+    team: int = Form(0),
+    team_name: str = Form(""),
+    team_padded: str = Form(""),
+    vocabulary: str = Form(""),
+    tokens: str = Form(""),
+) -> RedirectResponse:
+    from dataclasses import replace as dc_replace
+
+    path = estate_path()
+    estate = dc_replace(
+        load_estate(path),
+        team=team,
+        team_name=team_name.strip(),
+        team_padded=team_padded.strip(),
+        role_vocabulary=_split(vocabulary),
+    )
+    save_estate(estate, path, enclave_tokens=_split(tokens), sides=side_rules_of(path))
+    return _back("range settings saved")

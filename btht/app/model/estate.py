@@ -203,14 +203,28 @@ class Estate:
     """One team's whole estate. The unit of work, so cross-enclave deps validate."""
 
     team: int
-    team_padded: str
-    """Stored, not derived. Whether a single-digit team pads in *addresses* is
-    `OPEN-QUESTIONS.md` Q3 and unresolved; deriving it here would bake in a guess."""
+    """The team's number. It appears in almost every address in the range."""
+
+    team_name: str = ""
+    """What the team calls itself — `BT14`. Display only; nothing keys on it."""
+
+    team_padded: str = ""
+    """The team number as it appears in host and domain names, where that differs.
+
+    For most teams it does not: team 14 is `14` in both. It matters only for a
+    single-digit team, where the documents write the number unpadded in addresses and
+    zero-padded in names — and whether that is really true is `OPEN-QUESTIONS.md` Q3,
+    still open. Derived by `padded_default()` unless the operator says otherwise, so
+    nobody is asked a question they cannot answer."""
 
     role_vocabulary: tuple[str, ...] = ()
-    """Interface role tokens this estate uses, declared at setup. Empty means nothing
-    has been declared yet, not "anything goes" — an interface whose role is outside
-    this set surfaces in triage rather than being guessed."""
+    """The kinds of network segment this range has — workstations, servers, DMZ.
+
+    Not the pfSense interface names. `lan` is workstations on most enclaves and servers
+    on at least one, so the segment a rule is *about* has to be named separately from
+    the interface it happens to sit on. Empty means nothing has been declared yet, not
+    "anything goes": an interface whose segment is outside this set surfaces for a
+    decision rather than being guessed."""
 
     firewalls: tuple[Firewall, ...] = ()
     nodes: tuple[Node, ...] = ()
@@ -219,6 +233,15 @@ class Estate:
 
     shared_aliases: tuple[Alias, ...] = ()
     dependencies: tuple[CrossEnclaveDep, ...] = ()
+
+    @property
+    def label(self) -> str:
+        """What to call this range on screen."""
+        return self.team_name or f"team {self.team}"
+
+    def padded_default(self) -> str:
+        """The team number as it usually appears in names: zero-padded to two digits."""
+        return self.team_padded or f"{self.team:02d}"
 
     def knows_role(self, role: str) -> bool:
         """Whether a role token was declared for this estate."""

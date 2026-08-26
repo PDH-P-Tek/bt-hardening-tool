@@ -66,12 +66,30 @@ a{color:var(--accent)}
 .tile h3{margin:0 0 4px;font-size:14px}
 .tile p{margin:0;color:var(--muted);font-size:12.5px}
 .tile .count{font-family:var(--mono);font-size:20px;color:var(--accent);display:block;margin-bottom:4px}
-nav{font-size:13px;margin-bottom:18px}
+.mainnav{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:22px}
+.navtile{flex:1 1 150px;background:var(--panel);border:1px solid var(--line);
+  border-radius:8px;padding:10px 13px;text-decoration:none;color:var(--ink)}
+.navtile:hover{border-color:var(--accent)}
+.navtile.here{border-color:var(--accent);background:var(--accent-soft)}
+.navtile strong{display:block;font-size:13px}
+.navtile span{display:block;color:var(--muted);font-size:11.5px;margin-top:2px}
+.crumb{font-size:12.5px;color:var(--muted);margin-bottom:14px}
 </style>
 </head>
 <body>
 <div class="wrap">
-<nav><a href="/">estates</a> · <a href="/services">services</a>{% block nav %}{% endblock %}</nav>
+<nav class="mainnav">
+  <a class="navtile {% if page == 'range' %}here{% endif %}" href="/range">
+    <strong>Range</strong><span>enclaves, interfaces, hosts</span></a>
+  <a class="navtile {% if page == 'topology' %}here{% endif %}" href="/range/topology">
+    <strong>Topology</strong><span>the range drawn</span></a>
+  <a class="navtile {% if page == 'services' %}here{% endif %}" href="/services">
+    <strong>Service templates</strong><span>what a machine runs</span></a>
+  <a class="navtile {% if page == 'types' %}here{% endif %}" href="/services#types">
+    <strong>Host templates</strong><span>kinds of machine</span></a>
+  <a class="navtile {% if page == 'monitor' %}here{% endif %}" href="/range/monitor">
+    <strong>Monitor</strong><span>what changed</span></a>
+</nav>
 {% for kind, message in messages %}<div class="note {{ kind }}">{{ message }}</div>{% endfor %}
 {% block body %}{% endblock %}
 </div>

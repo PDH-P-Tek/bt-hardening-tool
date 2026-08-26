@@ -1,41 +1,35 @@
 {% extends "base.html" %}
+{% set page = "range" %}
 {% block body %}
-<h1>Range — team {{ estate.team }}</h1>
+<h1>Range — {{ estate.label }}</h1>
 <p class="sub">{{ estate.firewalls|length }} enclave(s) · {{ host_count }} host(s) ·
   {{ estate.all_nodes()|length }} managed device(s)</p>
-
-<div class="tiles">
-  <a class="tile" href="/range/topology">
-    <span class="count">{{ estate.firewalls|length }}</span>
-    <h3>Topology</h3>
-    <p>The range drawn. Open a firewall for its segments, a segment for its machines.</p>
-  </a>
-  <a class="tile" href="/services">
-    <span class="count">{{ catalogue.services|length }}</span>
-    <h3>Service templates</h3>
-    <p>What a machine can run, and which ports that means. Add your own.</p>
-  </a>
-  <a class="tile" href="/services#types">
-    <span class="count">{{ catalogue.host_types|length }}</span>
-    <h3>Host templates</h3>
-    <p>Kinds of machine and the services each one runs by default.</p>
-  </a>
-  <a class="tile" href="/range/monitor">
-    <span class="count">{{ estate.all_nodes()|length }}</span>
-    <h3>Monitor</h3>
-    <p>What the collector last saw, on the same picture.</p>
-  </a>
-</div>
 
 <div class="panel">
 <h2>Range settings</h2>
 <table>
-  <tr><th>team</th><td>{{ estate.team }}</td>
-      <th>as written in names</th><td>{{ estate.team_padded }}</td></tr>
-  <tr><th>segment names</th><td colspan="3">
-    {% for role in estate.role_vocabulary %}<span class="tag">{{ role }}</span> {% endfor %}
-    {% if not estate.role_vocabulary %}<span class="tag warn">none declared</span>{% endif %}
-  </td></tr>
+  <tr>
+    <th style="width:22%">Team</th>
+    <td>{{ estate.team_name or "—" }} <span class="sub">· number {{ estate.team }}</span></td>
+  </tr>
+  <tr>
+    <th>Number in host and domain names</th>
+    <td><code>{{ estate.padded_default() }}</code>
+      <span class="sub">— as in <code>do.{{ estate.padded_default() }}.dcm.ex</code></span></td>
+  </tr>
+  <tr>
+    <th>Segment types</th>
+    <td>
+      {% for role in estate.role_vocabulary %}<span class="tag">{{ role }}</span> {% endfor %}
+      {% if not estate.role_vocabulary %}<span class="tag warn">none declared</span>{% endif %}
+      <div class="sub" style="margin-top:5px">
+        What you call each kind of network segment. Every firewall interface is assigned
+        one. These are <em>not</em> the pfSense interface names — <code>lan</code> is
+        workstations on most enclaves and servers on at least one, so the segment a rule
+        is about has to be named separately from the interface it happens to sit on.
+      </div>
+    </td>
+  </tr>
 </table>
 <p style="margin-top:12px"><a class="btn quiet" href="/range/settings">Edit range settings</a></p>
 </div>

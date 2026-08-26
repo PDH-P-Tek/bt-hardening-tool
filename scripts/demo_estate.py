@@ -221,7 +221,7 @@ def build() -> tuple[Estate, Policy]:
     )
     estate = Estate(
         team=TEAM,
-        team_padded=str(TEAM),
+        team_name=f"BT{TEAM}",
         role_vocabulary=("wan", "ws", "svrs", "dmz", "uav"),
         firewalls=(deployed_official(), deployed_secret()),
         nodes=routers,
