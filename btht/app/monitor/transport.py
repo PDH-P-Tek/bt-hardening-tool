@@ -33,42 +33,63 @@ class RefusedCommand(Exception):
     """A command that is not read-only. Never sent."""
 
 
-#: Commands that change state. Matched as words so a path containing `rm` is fine.
-FORBIDDEN = (
-    "rm",
-    "mv",
-    "cp",
-    "dd",
-    "kill",
-    "pkill",
-    "reboot",
-    "shutdown",
-    "halt",
-    "chmod",
-    "chown",
-    "useradd",
-    "usermod",
-    "userdel",
-    "passwd",
-    "pfctl",
-    "iptables",
-    "nft",
-    "systemctl",
-    "service",
-    "tee",
-    "truncate",
-    "sed",
-    "vi",
-    "vim",
-    "nano",
-    "install",
-    "pkg",
-    "apt",
-    "yum",
-)
+#: **Allow-list, not deny-list.** A deny-list cannot express what the collectors
+#: actually need: `pfctl -sr` reads the ruleset and `pfctl -d` disables the packet
+#: filter entirely, and both are the same binary. A deny-list also fails open on
+#: anything nobody thought of, which is the wrong direction for a control whose whole
+#: claim is that it cannot write.
+#:
+#: `None` means the binary has no writing mode worth guarding. A tuple means the first
+#: real argument must start with one of those.
+ALLOWED: dict[str, tuple[str, ...] | None] = {
+    # Inherently read-only readers.
+    "cat": None,
+    "grep": None,
+    "getent": None,
+    "ls": None,
+    "stat": None,
+    "head": None,
+    "tail": None,
+    "wc": None,
+    "sort": None,
+    "uniq": None,
+    "awk": None,
+    "date": None,
+    "hostname": None,
+    "uname": None,
+    "id": None,
+    "who": None,
+    "last": None,
+    "uptime": None,
+    "ps": None,
+    "df": None,
+    "ss": None,
+    "netstat": None,
+    "sockstat": None,
+    "sha256sum": None,
+    "sha256": None,
+    "find": None,
+    "echo": None,
+    # Binaries with a writing mode. Constrained to the reading one.
+    "crontab": ("-l",),
+    "pfctl": ("-s", "-vs"),
+    "nft": ("list",),
+    "iptables": ("-L", "-S", "-n"),
+    "ip6tables": ("-L", "-S", "-n"),
+    "systemctl": ("list-units", "list-timers", "list-unit-files", "status", "show", "is-enabled"),
+    "sysctl": ("-a", "-n"),
+    "pkg": ("info", "query", "version"),
+    "rpm": ("-qa", "-q"),
+    "dpkg": ("-l", "--list"),
+    "vtysh": ("-c",),
+    "sshd": ("-T",),
+}
 
-#: Shell constructs that could smuggle a write past the word check.
+#: Shell constructs that could smuggle a write past the check.
 FORBIDDEN_TOKENS = (">", ">>", "|", "$(", "`", ";", "&&", "||", "\n")
+
+#: `vtysh -c` takes a command string, and only `show` reads.
+VTYSH_READS = ("show",)
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,8 +104,8 @@ class CommandResult:
         return self.exit_code == 0
 
 
-def _invoked(words: list[str]) -> list[str]:
-    """The words that are actually *run*, not every word on the line.
+def _invoked(words: list[str]) -> list[tuple[str, list[str]]]:
+    """The commands actually *run*, with their arguments.
 
     `getent passwd` reads the account database and does not invoke `passwd`; refusing
     it would make the check useless in the name of being strict. What matters is the
@@ -92,31 +113,20 @@ def _invoked(words: list[str]) -> list[str]:
     """
     if not words:
         return []
-    launched = [words[0]]
+    found = [(words[0].rsplit("/", 1)[-1], words[1:])]
     for index, word in enumerate(words):
         base = word.rsplit("/", 1)[-1]
-        launches_another = base in (
-            "-exec",
-            "-execdir",
-            "-ok",
-            "xargs",
-            "env",
-            "sudo",
-            "doas",
-            "sh",
-            "bash",
-        )
+        launches_another = base in ("-exec", "-execdir", "-ok", "xargs", "env", "sudo", "doas")
         if launches_another and index + 1 < len(words):
-            launched.append(words[index + 1])
-    return [word.rsplit("/", 1)[-1] for word in launched]
+            found.append((words[index + 1].rsplit("/", 1)[-1], words[index + 2 :]))
+    return found
 
 
 def assert_read_only(command: str) -> None:
     """Refuse anything that could change the host. Raises rather than warns.
 
-    Deliberately blunt. A collector that can be talked into writing is a collector
-    whose read-only claim is worth nothing, and the cost of a false refusal is one
-    obvious error message at development time.
+    An unrecognised command is refused, so a new collector has to declare what it
+    needs rather than discovering later that it could have written.
     """
     for token in FORBIDDEN_TOKENS:
         if token in command:
@@ -124,12 +134,30 @@ def assert_read_only(command: str) -> None:
                 f"{command!r} contains {token!r}. The collector sends single read-only "
                 "commands; anything that could redirect or chain is refused."
             )
-    for name in _invoked(shlex.split(command)):
-        if name in FORBIDDEN:
+
+    for name, args in _invoked(shlex.split(command)):
+        if name not in ALLOWED:
             raise RefusedCommand(
-                f"{command!r} invokes {name!r}, which can change the host. The monitor "
-                "is read-only: it renders the change and a human acts on the box."
+                f"{command!r} invokes {name!r}, which is not on the read-only "
+                "allow-list. Add it there deliberately, with the arguments that read."
             )
+        permitted = ALLOWED[name]
+        if permitted is None:
+            continue
+        first = next((a for a in args if not a.startswith("--")), "")
+        if not any(first.startswith(prefix) for prefix in permitted):
+            raise RefusedCommand(
+                f"{command!r} invokes {name!r} with {first!r}. Only "
+                f"{', '.join(permitted)} read; anything else can change the host."
+            )
+        if name == "vtysh":
+            position = args.index(first)
+            payload = args[position + 1] if len(args) > position + 1 else ""
+            if not payload.strip().startswith(VTYSH_READS):
+                raise RefusedCommand(
+                    f"{command!r}: vtysh may only run 'show' commands. Anything else "
+                    "reaches the routing configuration."
+                )
 
 
 class Transport(Protocol):

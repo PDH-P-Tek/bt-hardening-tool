@@ -70,10 +70,15 @@ def a_transport(**overrides: str) -> RecordedTransport:
         "rm -rf /tmp/x",
         "systemctl restart sshd",
         "pfctl -d",
+        "nft flush ruleset",
+        "crontab -r",
+        "vtysh -c 'configure terminal'",
         "cat /etc/passwd > /tmp/copy",
         "getent passwd; useradd intruder",
         "echo x | tee /etc/motd",
         "cat $(which nft)",
+        "find / -exec rm {} +",
+        "curl http://elsewhere/payload",
     ],
 )
 def test_anything_that_could_change_the_host_is_refused(command: str) -> None:
@@ -86,9 +91,32 @@ def test_anything_that_could_change_the_host_is_refused(command: str) -> None:
 
 
 def test_the_collectors_own_commands_all_pass_the_check() -> None:
-    """The refusal must be blunt without being useless."""
+    """The refusal must be blunt without being useless.
+
+    `getent passwd` reads the account database; an earlier version refused it because
+    the word `passwd` appeared, which is the kind of strictness that gets a control
+    turned off rather than trusted.
+    """
     for command in COMMANDS.values():
         assert_read_only(command)
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "pfctl -sr",
+        "pfctl -vsr",
+        "nft list ruleset",
+        "iptables -S",
+        "systemctl list-units --type=service",
+        "vtysh -c 'show running-config'",
+        "crontab -l -u root",
+        "sshd -T",
+    ],
+)
+def test_the_reading_mode_of_a_writing_binary_is_permitted(command: str) -> None:
+    """The reason for an allow-list: `pfctl -sr` reads and `pfctl -d` disables."""
+    assert_read_only(command)
 
 
 def test_the_transport_refuses_before_connecting() -> None:
@@ -331,3 +359,164 @@ def test_the_monitor_view_reuses_the_topology_rather_than_duplicating_it() -> No
 
     template = Path("btht/app/web/templates/monitor.html").read_text(encoding="utf-8")
     assert 'extends "topology.html"' in template
+
+
+# --- pfSense adapter, Phase 6.1 ---------------------------------------------
+
+#: Read from the exempt credential-fixture directory rather than written inline: the
+#: secret-exclusion test caught it here, which is the control doing its job.
+PF_CONFIG = (
+    Path(__file__).resolve().parents[1]
+    / "tests"
+    / "fixtures"
+    / "credentials"
+    / "pfsense-with-secrets.xml"
+).read_text(encoding="utf-8")
+
+
+def a_pfsense_transport(config: str = PF_CONFIG) -> RecordedTransport:
+    from btht.app.monitor.adapters.pfsense import COMMANDS as PF
+
+    return RecordedTransport(
+        host="fw1",
+        responses={
+            PF["M-FW-CONFIG"]: CommandResult(PF["M-FW-CONFIG"], stdout=config),
+            PF["M-FW-06"]: CommandResult(
+                PF["M-FW-06"], stdout="pass in quick on em0\nblock drop in\n"
+            ),
+            PF["M-SVC-01"]: CommandResult(PF["M-SVC-01"], stdout=""),
+        },
+    )
+
+
+def test_the_firewall_config_never_yields_its_hash_or_key_body() -> None:
+    """`MONITORING.md` §4 — config.xml holds hashes, keys and service passwords."""
+    from btht.app.monitor.adapters.pfsense import collect as pf_collect
+
+    collection = pf_collect(a_pfsense_transport(), secret="k")
+    blob = " ".join(i.key + i.value for i in collection.items)
+    assert "$2y$" not in blob
+    assert "SyntheticHash" not in blob
+    assert "QUFBQUJCQkJDQ0NDRERERA==" not in blob, "the key body must not be retained"
+
+
+def test_a_firewall_rule_is_identified_by_its_tracker() -> None:
+    """The awkward part of item identity, and pfSense supplies the answer.
+
+    An edited rule keeps its tracker, so the change reads as a change rather than as a
+    deletion plus an unrelated addition.
+    """
+    from btht.app.monitor.adapters.pfsense import collect as pf_collect
+
+    items = {i.key: i for i in pf_collect(a_pfsense_transport()).items}
+    assert "pf:rule:1699900001" in items
+
+    edited = PF_CONFIG.replace("<type>pass</type>", "<type>block</type>")
+    after = {i.key: i for i in pf_collect(a_pfsense_transport(edited)).items}
+    assert "pf:rule:1699900001" in after, "same identity"
+    assert after["pf:rule:1699900001"].value != items["pf:rule:1699900001"].value
+
+
+def test_a_management_alias_is_stored_as_addresses_not_a_count() -> None:
+    """`MONITORING.md` §5.7.1 — the operator should be reading addresses."""
+    from btht.app.monitor.adapters.pfsense import collect as pf_collect
+
+    alias = next(
+        i for i in pf_collect(a_pfsense_transport()).items if i.key == "pf:alias:Mgmt_Sources"
+    )
+    assert alias.severity is Severity.CRITICAL
+    assert "198.51.100.0/24" in alias.value and "203.0.113.0/24" in alias.value
+
+
+def test_the_pfsense_adapter_reuses_the_generators_parser() -> None:
+    """One parser, two halves — they cannot disagree about whether a rule changed."""
+    source = Path("btht/app/monitor/adapters/pfsense.py").read_text(encoding="utf-8")
+    assert "from btht.app.ingest.pfsense import" in source
+
+
+def test_a_mangled_config_is_a_result_not_a_crash() -> None:
+    from btht.app.monitor.adapters.pfsense import collect as pf_collect
+
+    collection = pf_collect(a_pfsense_transport("<pfsense><filter>"))
+    assert collection.reachable is False
+    assert "config.xml" in collection.error
+
+
+# --- FRR adapter, Phase 6.3 -------------------------------------------------
+
+RUNNING = """Building configuration...
+!
+router ospf
+ network 10.0.0.0/24 area 0
+ neighbor 10.0.0.2
+!
+username admin nopassword
+line vty
+!
+"""
+
+
+def a_frr_transport(running: str = RUNNING) -> RecordedTransport:
+    from btht.app.monitor.adapters.frr import COMMANDS as FRR
+
+    return RecordedTransport(
+        host="r1",
+        responses={
+            FRR["M-RT-01"]: CommandResult(FRR["M-RT-01"], stdout=running),
+            FRR["M-RT-02"]: CommandResult(FRR["M-RT-02"], stdout="10.0.0.2 Full/DR 00:00:35"),
+            FRR["M-RT-03"]: CommandResult(FRR["M-RT-03"], stdout="O>* 10.0.9.0/24 [110/20]"),
+            FRR["M-RT-04"]: CommandResult(FRR["M-RT-04"], stdout="10.0.0.2 up"),
+        },
+    )
+
+
+def test_the_running_config_is_config_and_the_routing_table_is_not() -> None:
+    """`MONITORING.md` §3.3 — the distinction that decides whether this is usable.
+
+    They live one line apart in the same tool's output, which is how they get confused.
+    """
+    from btht.app.monitor.adapters.frr import collect as frr_collect
+
+    collection = frr_collect(a_frr_transport())
+    config_keys = {i.key for i in collection.config_items()}
+    state_keys = {i.key for i in collection.state_items()}
+
+    assert any("router ospf" in k for k in config_keys)
+    assert any("neighbor 10.0.0.2" in k for k in config_keys), "a neighbour definition is config"
+    assert "frr:state:M-RT-03" in state_keys, "the routing table is state"
+    assert "frr:state:M-RT-02" in state_keys, "neighbour up/down is state"
+
+
+def test_an_adjacency_flapping_produces_no_change(tmp_path: Path) -> None:
+    """Otherwise the one line saying a *new* neighbour was configured is buried."""
+    from btht.app.monitor.adapters.frr import COMMANDS as FRR
+    from btht.app.monitor.adapters.frr import collect as frr_collect
+
+    store = Store(tmp_path / "m.sqlite")
+    store.adopt_baseline(frr_collect(a_frr_transport()))
+
+    flapped = a_frr_transport()
+    flapped.responses[FRR["M-RT-02"]] = CommandResult(FRR["M-RT-02"], stdout="10.0.0.2 Down")
+    flapped.responses[FRR["M-RT-03"]] = CommandResult(FRR["M-RT-03"], stdout="(table rewritten)")
+    assert store.apply(frr_collect(flapped)) == ()
+    store.close()
+
+
+def test_a_new_routing_neighbour_is_a_change(tmp_path: Path) -> None:
+    from btht.app.monitor.adapters.frr import collect as frr_collect
+
+    store = Store(tmp_path / "m.sqlite")
+    store.adopt_baseline(frr_collect(a_frr_transport()))
+    changes = store.apply(
+        frr_collect(a_frr_transport(RUNNING.replace(" neighbor 10.0.0.2", " neighbor 10.0.0.9")))
+    )
+    kinds = {c.kind for c in changes}
+    assert kinds == {ChangeKind.ADDED, ChangeKind.REMOVED}
+    store.close()
+
+
+def test_a_router_login_line_is_critical() -> None:
+    from btht.app.monitor.adapters.frr import collect as frr_collect
+
+    item = next(i for i in frr_collect(a_frr_transport()).items if "username admin" in i.key)
+    assert item.severity is Severity.CRITICAL

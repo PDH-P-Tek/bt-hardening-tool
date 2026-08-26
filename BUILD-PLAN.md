@@ -136,9 +136,9 @@ and 1.3, nothing from the generator's front half.
 
 | # | Step | Source | Done when |
 |---|---|---|---|
-| 6.1 | pfSense adapter — **reuses the Phase 1.1 parser** | §6.1 | `M-ACC-07`, `M-FW-01/06/07` reporting |
+| 6.1 | ✅ pfSense adapter — **reuses the Phase 1.1 parser** | §6.1 | `M-ACC-07`, `M-FW-01/06/07` reporting |
 | 6.2 | Services, listening ports, boot hooks, filesystem canaries | §5.4–5.6 | Coverage broadened across all platforms |
-| 6.3 | FRR adapter | §6.3 | `show running-config` diffed; `show ip route` displayed and never diffed |
+| 6.3 | ✅ FRR adapter | §6.3 | `show running-config` diffed; `show ip route` displayed and never diffed |
 
 ---
 
