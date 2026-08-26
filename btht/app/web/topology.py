@@ -38,6 +38,16 @@ LABEL_BASELINE = 18
 SUBLABEL_BASELINE = 33
 
 
+def _health_accent(health: str, default: str) -> str:
+    """Colour from monitor state. Silence is not health — an unpolled node keeps
+    its declared colour rather than being painted green."""
+    if health.startswith("unreachable"):
+        return "warn"
+    if "change" in health:
+        return "warn"
+    return default
+
+
 @dataclass(frozen=True, slots=True)
 class Shape:
     """One clickable thing on the diagram."""
@@ -135,8 +145,14 @@ def _interface_detail(firewall: Firewall, index: int) -> dict[str, Any]:
     return {"title": f"{firewall.enclave} · {iface.role}", "fields": fields, "warnings": warnings}
 
 
-def layout(estate: Estate) -> Diagram:
-    """Geometry as a pure function of the declared estate."""
+def layout(estate: Estate, status: dict[str, str] | None = None) -> Diagram:
+    """Geometry as a pure function of the declared estate.
+
+    `status` paints monitor state onto the same picture — `MONITORING.md` §8.2 and
+    `BUILD-PLAN.md` 5.4. One component, two consumers: a host that stops answering is
+    a shape that changes colour rather than a line in a log, and the operator is
+    already looking at this diagram.
+    """
     diagram = Diagram()
     firewalls = sorted(estate.firewalls, key=lambda f: f.enclave)
     loose = sorted(
@@ -158,17 +174,21 @@ def layout(estate: Estate) -> Diagram:
         height = HEADER_HEIGHT + max(len(interfaces), 1) * ROW_HEIGHT + PADDING
 
         detail_id = f"fw:{firewall.enclave}"
+        health = (status or {}).get(firewall.node.name, "")
         diagram.shapes.append(
             Shape(
                 detail_id=detail_id,
                 kind="firewall",
                 label=firewall.enclave,
-                sublabel=f"{firewall.node.platform.value} · {firewall.node.mgmt_address}",
+                sublabel=(
+                    f"{firewall.node.platform.value} · {firewall.node.mgmt_address}"
+                    + (f" · {health}" if health else "")
+                ),
                 x=x,
                 y=y,
                 width=CARD_WIDTH,
                 height=HEADER_HEIGHT - 12,
-                accent="accent",
+                accent=_health_accent(health, "accent"),
             )
         )
         diagram.details[detail_id] = _firewall_detail(firewall)
@@ -203,17 +223,21 @@ def layout(estate: Estate) -> Diagram:
     for node in loose:
         x, y = place(column)
         detail_id = f"node:{node.name}"
+        health = (status or {}).get(node.name, "")
         diagram.shapes.append(
             Shape(
                 detail_id=detail_id,
                 kind="node",
                 label=node.name,
-                sublabel=f"{node.platform.value} · {node.mgmt_address}",
+                sublabel=(
+                    f"{node.platform.value} · {node.mgmt_address}"
+                    + (f" · {health}" if health else "")
+                ),
                 x=x,
                 y=y,
                 width=CARD_WIDTH,
                 height=HEADER_HEIGHT - 12,
-                accent="ok",
+                accent=_health_accent(health, "ok"),
             )
         )
         diagram.details[detail_id] = _node_detail(node)

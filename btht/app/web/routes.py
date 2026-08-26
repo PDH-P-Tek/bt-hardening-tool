@@ -578,3 +578,49 @@ def export(slug: str, enclave: str) -> Any:
     if not gate.may_export:
         return PlainTextResponse(f"Export refused. {gate.reason}", status_code=409)
     return PlainTextResponse(checklist(ruleset, team=str(load_estate(estate_path(slug)).team)))
+
+
+@router.get("/estates/{slug}/monitor", response_class=HTMLResponse)
+def monitor_dashboard(request: Request, slug: str) -> HTMLResponse:
+    """The topology with live status on it — `BUILD-PLAN.md` 5.4.
+
+    Not a second dashboard. The operator already reads this picture, and a host that
+    stops answering should change on the picture they are already looking at.
+    """
+    from btht.app.monitor.store import Store
+
+    path = estate_path(slug)
+    estate = load_estate(path)
+    database = ESTATES / f"{path.stem}-monitor.sqlite"
+
+    status: dict[str, str] = {}
+    worklist: list[dict[str, str]] = []
+    if database.exists():
+        store = Store(database)
+        try:
+            for beat in store.heartbeats():
+                status[str(beat["host"])] = (
+                    "reachable" if beat["reachable"] else f"unreachable — {beat['error']}"
+                )
+            for row in store.worklist():
+                worklist.append(
+                    {
+                        "host": str(row["host"]),
+                        "label": str(row["label"]),
+                        "note": str(row["note"]),
+                        "collector": str(row["collector"]),
+                    }
+                )
+        finally:
+            store.close()
+
+    diagram = layout(estate, status)
+    return render(
+        request,
+        "monitor.html",
+        slug=path.stem,
+        svg=render_svg(diagram),
+        details=details_json(diagram),
+        polled=bool(status),
+        worklist=worklist,
+    )

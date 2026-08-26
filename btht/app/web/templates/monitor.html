@@ -1,0 +1,28 @@
+{% extends "topology.html" %}
+{% block body %}
+<h1>{{ slug }} — estate monitor</h1>
+<p class="sub">The same picture, with what the collector last saw painted on it.
+This view is read-only: it renders the change, and a human acts on the box.</p>
+
+{% if not polled %}
+<div class="note warn">Nothing has been collected yet, so nothing here is green.
+An unpolled device keeps its declared colour rather than being shown as healthy —
+silence is not health.</div>
+{% endif %}
+
+{% if worklist %}
+<div class="panel">
+<h2>Being dealt with — {{ worklist|length }}</h2>
+<p class="sub">Flagged items stay here and stop re-alerting every cycle.</p>
+<table>
+  <tr><th>host</th><th>item</th><th>collector</th><th>note</th></tr>
+  {% for entry in worklist %}
+  <tr><td>{{ entry.host }}</td><td>{{ entry.label }}</td>
+      <td class="mono">{{ entry.collector }}</td><td>{{ entry.note }}</td></tr>
+  {% endfor %}
+</table>
+</div>
+{% endif %}
+
+{{ super() }}
+{% endblock %}

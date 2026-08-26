@@ -7,7 +7,7 @@ on something outside the code.
 **This does not replace those lists.** Every step cites its source, and the source
 stays authoritative on *what* the step must do. This file is authoritative on *when*.
 
-Status: **Phases 0–4 complete.** 31 validators, the diff gate, and export refused until it opens. Phase 5 next — the monitor core.
+Status: **Phases 0–5 complete.** The generator ships a checklist behind a diff gate; the monitor collects, diffs and triages per item. Phase 6 next — pfSense and FRR adapters.
 
 ---
 
@@ -119,10 +119,10 @@ and 1.3, nothing from the generator's front half.
 
 | # | Step | Source | Done when |
 |---|---|---|---|
-| 5.1 | Inventory, credential store, SSH transport, heartbeat | §10.1 | "Are all my boxes up, is my access intact" answerable |
-| 5.2 | Linux adapter — accounts, keys, sudo, cron | §5.1–5.3 | Easiest platform to test off-range; hits the DCM26 pattern directly |
-| 5.3 | **Diff engine, item identity, review state** | §3.4 | Accept / flag / suppress work **per item**. Accepting one change does not resurface nine others |
-| 5.4 | Estate / host / item dashboard — **the 2.2 topology with live status on it** | §8.2 | First point the monitor is genuinely usable. A host that stops answering is visible as a shape, not a log line |
+| 5.1 | ✅ Inventory, credential store, SSH transport, heartbeat | §10.1 | "Are all my boxes up, is my access intact" answerable |
+| 5.2 | ✅ Linux adapter — accounts, keys, sudo, cron | §5.1–5.3 | Easiest platform to test off-range; hits the DCM26 pattern directly |
+| 5.3 | ✅ **Diff engine, item identity, review state** | §3.4 | Accept / flag / suppress work **per item**. Accepting one change does not resurface nine others |
+| 5.4 | ✅ Estate / host / item dashboard — **the 2.2 topology with live status on it** | §8.2 | First point the monitor is genuinely usable. A host that stops answering is visible as a shape, not a log line |
 
 > 5.3 is the product, not the plumbing. Prove it on one adapter before adding more.
 > **Config is diffed, state is never diffed** (§3.3) — the rule that decides whether this
