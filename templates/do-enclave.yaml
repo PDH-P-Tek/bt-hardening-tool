@@ -1,0 +1,110 @@
+# Enclave starter template — Deployed Official (DO)
+#
+# Derived from DCM26 Annex A DO Rev B2 and the ISA Target Checks Status board.
+#
+# Loaded when the operator picks "Deployed Official" in the wizard. Everything
+# here is a PRE-TICKED SUGGESTION shown for confirmation, never applied silently.
+# Confirm against your own annex — see BASELINE-ANALYSIS.md §4 for how much
+# varies between enclaves.
+
+template: do
+source: "BT Technical Information Book Annex A — DO, Rev B2"
+domain: "do.{XX}.dcm.ex"
+firewall: "fw1.do.{XX}.dcm.ex"
+estate_side: deployed
+
+# --- §1.2 Subnets ----------------------------------------------------------
+
+segments:
+  - { role: ws,   name: Workstations, v4: "25.{X}.9.0/24",  v6: "fd81:25:{X}:9::/64",  ifname: lan }
+  - { role: svrs, name: Servers,      v4: "25.{X}.10.0/24", v6: "fd81:25:{X}:10::/64", ifname: opt1 }
+  - { role: dmz,  name: DMZ,          v4: "25.{X}.11.0/24", v6: "fd81:25:{X}:11::/64", ifname: opt2 }
+
+wan: { v4: "25.{X}.0.10/24", v6: "fd81:25:{X}::10/64", ifname: wan }
+
+# --- §2.5 Known devices ----------------------------------------------------
+# isa_checks are the DEFAULTS from isa-checks.yaml role_check_sets. Confirm each
+# against the live ISA board on day 0 — that board is authoritative.
+
+hosts:
+
+  # Servers
+  - { name: dc01,      v4: "25.{X}.10.11",  v6: "fd81:25:{X}:10::11",  segment: svrs, role: domain_controller }
+  - { name: dc02,      v4: "25.{X}.10.12",  v6: "fd81:25:{X}:10::12",  segment: svrs, role: domain_controller }
+  - { name: mail,      v4: "25.{X}.10.25",  v6: "fd81:25:{X}:10::25",  segment: svrs, role: mail_server }
+  - { name: fs,        v4: "25.{X}.10.139", v6: "fd81:25:{X}:10::139", segment: svrs, role: file_server }
+  - { name: apj,       v4: "25.{X}.10.6",   v6: "fd81:25:{X}:10::6",   segment: svrs, role: apj,
+      note: "HR application server, Ubuntu 24.04. PORTS UNKNOWN — emits UNVERIFIED." }
+  - { name: modgpt,    v4: "25.{X}.10.8",   v6: "fd81:25:{X}:10::8",   segment: svrs, role: modgpt,
+      note: "GPT module server, Ubuntu 24.04. PORTS UNKNOWN — emits UNVERIFIED." }
+  - { name: nextcloud, v4: "25.{X}.10.7",   v6: "fd81:25:{X}:10::7",   segment: svrs, role: nextcloud,
+      note: "In-scope for Red Team. Distinct from the exercise NextCloud at cloud.crp.cr14.net." }
+
+  # DMZ
+  - { name: proxy, v4: "25.{X}.11.53", v6: "fd81:25:{X}:11::53", segment: dmz, role: proxy }
+  - { name: ftp,   v4: "25.{X}.11.22", v6: "fd81:25:{X}:11::22", segment: dmz, role: ftp_server,
+      note: "Passive data range unknown. pfSense has no FTP helper — see service-catalogue.yaml." }
+
+  # Workstations — ranges, expanded by the wizard
+  - { name_range: "ws101-ws110", v4_base: "25.{X}.9.2",  segment: ws, role: workstation, os: "Windows 10 22H2" }
+  - { name_range: "ws201-ws210", v4_base: "25.{X}.9.31", segment: ws, role: workstation, os: "Windows 11 23H2" }
+  - { name_range: "ws301-ws305", v4_base: "25.{X}.9.60", segment: ws, role: workstation, os: "Ubuntu Desktop 24.04" }
+  - { name_range: "ws401-ws405", v4_base: "25.{X}.9.80", segment: ws, role: workstation, os: "Ubuntu Desktop 24.04" }
+
+  # EXCON — Out of Bounds. Protected: never blocked, never a policy target.
+  - { name: scoringbot,     v4: "25.{X}.9.254", v6: "fd81:25:{X}:9::254", segment: ws,
+      out_of_bounds: true, role: scoring_bot,
+      note: "Availability scoring source. NOT SHOWN ON THE RANGE DIAGRAM. Inside the workstation segment, so its checks against svrs and dmz cross the firewall." }
+  - { name: "npc-server-do", v4: "25.{X}.9.249", segment: ws,
+      out_of_bounds: true, role: npc_server,
+      note: "Usersim/NPC control. Egress is a scored obligation — 'Agents Status' check. Annex A §2.2." }
+
+# --- §2.6 Connectivity Requirements ----------------------------------------
+# Pre-ticked. Each expands in the wizard to show the rules it generates.
+
+connectivity:
+
+  within:
+    - id: ws-svrs-open
+      text: "Communication must be open between workstation and server networks."
+      generates: "ws <-> svrs permit, dual-stack"
+
+  inbound:
+    - id: dmz-public
+      text: "Services in the DO DMZ are public facing and must be externally accessible from greynet and to user simulators."
+      generates: "WAN -> dmz permit, scoped to the DMZ service ports"
+    - id: dns-to-dcs
+      text: "DNS queries to the domain controllers (required for correct cyber range operation)."
+      generates: "-> DO_DCs tcp/udp 53"
+      note: "ENCLAVE-SPECIFIC. BANK sends DNS to the DMZ proxy instead. Read your own annex."
+    - id: yt-rdp-ssh
+      text: "Yellow Team User simulators must be able to remotely access workstations (i.e. RDP / SSH) via their range VPN."
+      generates: "Remote_Access -> ws tcp 3389, 22"
+    - id: owa
+      text: "Outlook Web Access (OWA) must be enabled on the mail server for user access."
+      generates: "-> mail tcp 443"
+
+  outbound:
+    - id: egress-greynet
+      text: "Workstations, Servers, and DMZ must be able to communicate to greynet (simulated internet)."
+    - id: egress-dns
+      text: "DNS queries to the range core DNS resolvers in greynet."
+      generates: "-> 10.181.0.11, 10.181.0.12 tcp/udp 53"
+
+# --- Suggested aliases -----------------------------------------------------
+
+suggested_aliases:
+  DO_DCs:          { type: host, entries: ["25.{X}.10.11", "25.{X}.10.12", "fd81:25:{X}:10::11", "fd81:25:{X}:10::12"] }
+  DO_MAIL:         { type: host, entries: ["25.{X}.10.25", "fd81:25:{X}:10::25"] }
+  DO_DMZ_PUBLIC:   { type: host, entries: ["25.{X}.11.53", "25.{X}.11.22"] }
+  Scoring_Sources: { type: host, entries: ["25.{X}.9.254", "fd81:25:{X}:9::254", "10.181.2.214"] }
+  Mgmt_Sources:    { type: network, entries: [{ alias: Remote_Access }, { segment: ws }], lockout_critical: true }
+  FW_Management:   { type: port, entries: [22, 443] }
+  BLOCKED_IPs:     { type: host, entries: [], descr: "IOC block list — empty on day one" }
+
+# --- Notes -----------------------------------------------------------------
+
+notes:
+  - "Default admin password for DO is Admin1Admin1 (§1.3). This is also the FRR package password in the shipped config — changing it is legitimate BT work."
+  - "The DO firewall is itself a scored target: HOST, SSH, HTTPS, possibly Graynet Access. Do not lock the scoring source out of 22/443, and do not block firewall egress."
+  - "apj and modgpt have no ISA checks observed and no known ports. They emit UNVERIFIED allow-all and report on every export until closed — see VERIFICATION.md."

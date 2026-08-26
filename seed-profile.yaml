@@ -1,0 +1,399 @@
+# BT Hardening Tool — seed classification profile
+#
+# Derived from the three DCM26 fw1 exports (do / ds / dsoc, team 14, 9 Feb 26).
+# See BASELINE-ANALYSIS.md for the evidence behind every entry.
+#
+# This file is DECLARATIVE. It states each protected item semantically; the
+# application computes strict and structural fingerprints from these entries at
+# load time using the same normalisation path as ingest (SPEC.md §5.2–5.3).
+# Never hand-write hashes here — they would drift from the implementation.
+#
+# Template tokens:
+#   {X}  unpadded team number, as used in IPv4 octets and IPv6 groups
+#   {XX} zero-padded team number, as used in DNS names
+# NOTE: for team 14 these are identical, so the DCM26 evidence cannot
+# distinguish them in the addressing. See OPEN-QUESTIONS.md Q3.
+
+version: 1
+derived_from:
+  exercise: DCM26
+  captured: 2026-02-09
+  config_format: "23.3"
+  pfsense_build: "CE 2.8.1"
+  enclaves_observed: [do, ds, dsoc]
+
+# ---------------------------------------------------------------------------
+# Interface role vocabulary
+# ---------------------------------------------------------------------------
+# Roles are derived from <descr> by stripping an enclave token. Emission always
+# uses the pfSense ifname; matching always uses the role. See SPEC.md §4.2.
+
+interface_roles:
+  # longest-first match
+  enclave_tokens: [bt_wan_, hn_wan_, dsoc_, do_, ds_, mcu_, gov_, mil_, bank_]
+  recognised: [wan, ws, svrs, dmz, uav, scada, power, sat, port1, port2, stbd1, stbd2]
+
+  observed:
+    do:
+      wan:  { ifname: wan,  descr: bt_wan_do,   v4: "25.{X}.0.10/24",  v6: "fd81:25:{X}::10/64" }
+      ws:   { ifname: lan,  descr: do_ws,       v4: "25.{X}.9.1/24",   v6: "fd81:25:{X}:9::1/64" }
+      svrs: { ifname: opt1, descr: do_svrs,     v4: "25.{X}.10.1/24",  v6: "fd81:25:{X}:10::1/64" }
+      dmz:  { ifname: opt2, descr: do_dmz,      v4: "25.{X}.11.1/24",  v6: "fd81:25:{X}:11::1/64" }
+    ds:
+      wan:  { ifname: wan,  descr: bt_wan_ds,   v4: "25.{X}.0.12/24",  v6: "fd81:25:{X}::12/64" }
+      ws:   { ifname: lan,  descr: ds_ws,       v4: "25.{X}.17.1/24",  v6: "fd81:25:{X}:17::1/64" }
+      svrs: { ifname: opt1, descr: ds_svrs,     v4: "25.{X}.18.1/24",  v6: "fd81:25:{X}:18::1/64" }
+      uav:  { ifname: opt2, descr: ds_uav,      v4: "25.{X}.19.1/24",  v6: "fd81:25:{X}:19::1/64" }
+      dmz:  { ifname: opt3, descr: ds_dmz,      v4: "25.{X}.21.1/24",  v6: "fd81:25:{X}:21::1/64" }
+    dsoc:
+      # NOTE THE INVERSION: lan is servers here, not workstations.
+      wan:  { ifname: wan,  descr: bt_wan_dsoc, v4: "25.{X}.0.14/24",  v6: "fd81:25:{X}::14/64" }
+      svrs: { ifname: lan,  descr: dsoc_svrs,   v4: "25.{X}.7.1/24",   v6: "fd81:25:{X}:7::1/64" }
+      ws:   { ifname: opt1, descr: dsoc_ws,     v4: "25.{X}.8.1/24",   v6: "fd81:25:{X}:8::1/64" }
+    gov:
+      wan:   { ifname: wan,  descr: hn_wan_gov,  v4: "10.{X}.0.4/24" }
+      ws:    { ifname: lan,  descr: gov_ws,      v4: "10.{X}.1.1/24" }
+      svrs:  { ifname: opt1, descr: gov_svrs,    v4: "10.{X}.2.1/24" }
+      scada: { ifname: opt2, descr: gov_scada,   v4: "10.{X}.5.1/24" }
+      dmz:   { ifname: opt3, descr: gov_dmz,     v4: "10.{X}.4.1/24" }
+    mil:
+      wan:   { ifname: wan,  descr: hn_wan_mil,  v4: "10.{X}.0.20/24" }
+      ws:    { ifname: lan,  descr: mil_ws,      v4: "10.{X}.9.1/24" }
+      svrs:  { ifname: opt1, descr: mil_svrs,    v4: "10.{X}.10.1/24" }
+      sat:   { ifname: opt2, descr: mil_sat,     v4: "10.{X}.11.1/24" }
+      dmz:   { ifname: opt3, descr: mil_dmz,     v4: "10.{X}.12.1/24" }
+      power: { ifname: opt4, descr: mil_power,   v4: "10.{X}.13.1/24" }
+    bank:
+      wan:   { ifname: wan,  descr: hn_wan_bank, v4: "10.{X}.80.6/24",  v6: "fd81:10:{X}:80::6/64" }
+      ws:    { ifname: lan,  descr: bank_ws,     v4: "10.{X}.17.1/24",  v6: "fd81:10:{X}:17::1/64" }
+      svrs:  { ifname: opt1, descr: bank_svrs,   v4: "10.{X}.18.1/24",  v6: "fd81:10:{X}:18::1/64" }
+      dmz:   { ifname: opt2, descr: bank_dmz,    v4: "10.{X}.21.1/24",  v6: "fd81:10:{X}:21::1/64" }
+    mcu:
+      # STRADDLES: WAN on the Host Nation side, internals in deployed space.
+      # Derive estate_side from the WAN address, never from the internal ranges.
+      wan:   { ifname: wan,  descr: hn_wan_mcu,  v4: "10.{X}.80.16/24" }
+      dmz:   { ifname: lan,  descr: mcu_dmz,     v4: "25.{X}.26.1/24" }
+      port1: { ifname: opt1, descr: mcu_port1,   v4: "25.{X}.27.1/24" }
+      port2: { ifname: opt2, descr: mcu_port2,   v4: "25.{X}.28.1/24" }
+      stbd1: { ifname: opt3, descr: mcu_stbd1,   v4: "25.{X}.29.1/24" }
+      stbd2: { ifname: opt4, descr: mcu_stbd2,   v4: "25.{X}.30.1/24" }
+
+  # Two Host Nation WAN segments exist: 10.{X}.0.0/24 (gov, mil) and
+  # 10.{X}.80.0/24 (bank, mcu). Deployed WAN is 25.{X}.0.0/24.
+
+# ---------------------------------------------------------------------------
+# Platform expectations — assert on ingest, warn on mismatch
+# ---------------------------------------------------------------------------
+
+platform_expectations:
+  config_version: "23.3"
+  pfsense_build: "CE 2.8.1"
+  nat_outbound_mode: disabled        # pure routed. A change to hybrid is BLOCKING.
+  nat_port_forwards: 0
+  antilockout_enabled: true
+  filter_descriptions: true          # <syslog><filterdescriptions>1</filterdescriptions>
+  upstream_dns: ["10.181.0.11", "10.181.0.12"]
+  range_core_block: "10.181.0.0/16"  # DNS + the ISA monitor at 10.181.2.214
+  local_ntp_by_enclave:
+    do:   "25.{X}.10.11"
+    ds:   "25.{X}.18.11"
+    dsoc: "25.{X}.7.11"
+
+# ---------------------------------------------------------------------------
+# Out-of-bounds EXCON hosts
+# ---------------------------------------------------------------------------
+# Never blocked, never a policy target, egress preserved. Not every annex lists
+# them — Annex A DO does, Annex G BANK does not. Absence from the annex is not
+# absence from the network.
+
+out_of_bounds:
+  - name: scoringbot
+    pattern: "<workstation_subnet>.254"
+    observed: { do: "25.{X}.9.254", gov: "10.{X}.1.254" }
+    v6: "fd81:25:{X}:9::254"
+    note: >-
+      EXCON availability scoring. Deployed enclaves host one locally INSIDE the
+      workstation segment, so its checks against servers and DMZ cross the
+      firewall. Host Nation enclaves are served by the GOV bot (Annex G §2.6).
+      Not shown on the range diagram.
+  - name: npc-server
+    observed: { do: "25.{X}.9.249" }
+    note: >-
+      EXCON usersim/NPC control. Annex A DO §2.2: "communications must be
+      maintained through your firewall to external networks to avoid affecting
+      your score." Its egress is a scored obligation ("Agents Status" check).
+  - name: central-monitor
+    observed: "10.181.2.214"
+    note: "ISA platform monitor, in the range core services block."
+
+# ---------------------------------------------------------------------------
+# Aliases
+# ---------------------------------------------------------------------------
+
+aliases:
+
+  - name: Routers
+    type: host
+    role: routing
+    disposition: keep_verbatim
+    lockout_critical: false
+    entries:
+      - "25.{X}.0.1"
+      - "25.{X}.0.2"
+      - "25.{X}.0.3"
+      - "fd81:10:{X}::1"      # see defect below
+      - "fd81:10:{X}::2"
+      - "fd81:10:{X}::3"
+    descr: "Blue Team edge routers r1 and r2"
+    plain_english: >-
+      The enclave's upstream edge routers. Rule "Routing information exchange"
+      uses this to permit OSPF, OSPFv3 and BFD from them to the firewall.
+    known_defect:
+      id: F1
+      severity: high
+      summary: >-
+        IPv6 entries use the Host Nation prefix fd81:10:{X}:: but the deployed-side
+        peers are on fd81:25:{X}::, as the box's own FRR BFD peer list confirms.
+        Currently masked by the wide-open WAN rule. Removing that rule without
+        correcting this puts IPv6 routing adjacency at risk.
+      validators: [V-ALIAS-FAMILY, V-ROUTING-PEERS]
+    notes: >-
+      Also contains .3 (r-access, EXCON) despite the description naming only two
+      routers. Do not "correct" the description — reproduce verbatim.
+
+  - name: Remote_Access
+    type: network
+    role: remote_access
+    disposition: keep_verbatim
+    lockout_critical: true            # <<< dropping this locks the team out
+    entries:
+      - { cidr: "172.21.31.0/24",       owner: "Green Team VPN" }
+      - { cidr: "fd81:172:21:31::/64",  owner: "Green Team VPN" }
+      - { cidr: "198.18.128.0/24",      owner: "White Team VPN" }
+      - { cidr: "fd81:198:18:128::/64", owner: "White Team VPN" }
+      - { cidr: "198.19.{X}.0/24",      owner: "Blue Team VPN" }
+      - { cidr: "fd81:198:19:{X}::/64", owner: "Blue Team VPN" }
+      - { cidr: "172.21.28.0/24",       owner: "Green Team Local" }
+      - { cidr: "fd81:172:21:28::/64",  owner: "Green Team Local" }
+      - { cidr: "172.21.29.0/24",       owner: "Green Team Tools" }
+      - { cidr: "fd81:172:21:29::/64",  owner: "Green Team Tools" }
+    descr: "Remote access from BT, GT, and WT VPN"
+    plain_english: >-
+      Every VPN range that may reach this enclave, including your own Blue Team
+      VPN. If you narrow or remove this you lose access to your own firewalls.
+    notes: >-
+      Owner mapping decoded from the pfSense <detail> field, which pairs 1:1 with
+      address entries in order. Corroborated by the revision log
+      (admin@198.19.14.19) and the sshguard whitelist. The team-number keying of
+      198.19.{X}.0/24 is INFERRED from a single team's config — confirm with GT.
+
+# ---------------------------------------------------------------------------
+# Rules — order as found in <filter>
+# ---------------------------------------------------------------------------
+
+rules:
+
+  # --- Floating: non-quick, all interfaces, both families, no description ----
+
+  - key: gt_floating_dns
+    role: essential_services
+    disposition: keep_verbatim
+    floating: true
+    quick: false                      # <<< load-bearing, see BASELINE-ANALYSIS F3
+    direction: any
+    interface: any
+    type: pass
+    ipprotocol: inet46
+    protocol: tcp/udp
+    source: any
+    destination: { any: true, port: 53 }
+    statetype: keep state
+    descr: ""
+    plain_english: >-
+      DNS is permitted from anywhere to anywhere, in every direction, IPv4 and
+      IPv6. Not a quick rule, so any quick block you add will override it.
+
+  - key: gt_floating_ntp
+    role: essential_services
+    disposition: keep_verbatim
+    floating: true
+    quick: false
+    direction: any
+    interface: any
+    type: pass
+    ipprotocol: inet46
+    protocol: udp
+    source: any
+    destination: { any: true, port: 123 }
+    statetype: keep state
+    descr: ""
+    plain_english: >-
+      NTP is permitted from anywhere to anywhere. Same non-quick caveat as DNS.
+
+  - key: gt_floating_icmp
+    role: essential_services
+    disposition: keep_verbatim
+    floating: true
+    quick: false
+    direction: any
+    interface: any
+    type: pass
+    ipprotocol: inet46
+    protocol: icmp
+    icmptype: [any]
+    source: any
+    destination: any
+    statetype: keep state
+    descr: ""
+    plain_english: >-
+      All ICMP and ICMPv6, every type, both directions. This is what currently
+      carries IPv6 Neighbour Discovery, Router Advertisement and Packet Too Big.
+      Narrowing it to echo only breaks IPv6 in ways that fail slowly.
+
+  # --- WAN ------------------------------------------------------------------
+
+  - key: gt_wan_remote_access
+    role: remote_access
+    disposition: keep_verbatim
+    lockout_critical: true
+    floating: false
+    interface: [wan]
+    type: pass
+    ipprotocol: inet46
+    source: { alias: Remote_Access }
+    destination: any
+    statetype: keep state
+    descr: "VPN access for exercise participants"
+    plain_english: >-
+      Participant VPNs may reach anything in this enclave. This is how you reach
+      your own firewall GUI. Do not remove it.
+
+  - key: gt_wan_routing
+    role: routing
+    disposition: keep_verbatim
+    floating: false
+    interface: [wan]
+    type: pass
+    ipprotocol: inet46
+    source: { alias: Routers }
+    destination: self
+    statetype: keep state
+    descr: "Routing information exchange"
+    plain_english: >-
+      The edge routers may talk to this firewall — OSPF, OSPFv3 and BFD. Remove
+      it and routing adjacency drops. See defect F1 on the Routers alias.
+
+  - key: gt_wan_self_outbound
+    role: routing
+    disposition: keep_verbatim
+    floating: false
+    interface: [wan]
+    type: pass
+    ipprotocol: inet46
+    source: self
+    destination: any
+    statetype: keep state
+    descr: "Firewall outbound traffic"
+    plain_english: >-
+      Traffic originated by the firewall itself.
+
+  - key: gt_wan_permissive
+    role: permissive_default
+    disposition: replace_generated
+    floating: false
+    interface: [wan]
+    type: pass
+    ipprotocol: inet46
+    source: any
+    destination: any
+    statetype: keep state
+    descr: ""
+    plain_english: >-
+      Any source arriving on WAN may reach anything. This is the wide-open
+      default Green Team ships, and replacing it is the whole job. It is also
+      what currently admits the availability probes and the Yellow Team
+      usersims — so do not remove it until scoring sources are explicitly
+      permitted.
+    warns: [V-SCORING-ABSENT]
+
+  # --- Internal interfaces --------------------------------------------------
+
+  - key: gt_internal_permissive
+    role: permissive_default
+    disposition: replace_generated
+    applies_to_roles: [ws, svrs, dmz, uav]     # one instance per internal segment
+    floating: false
+    type: pass
+    ipprotocol: inet46
+    source: any
+    destination: any
+    statetype: keep state
+    descr: ""
+    plain_english: >-
+      Anything on this segment may reach anywhere. Replace with your enclave
+      policy.
+
+# ---------------------------------------------------------------------------
+# Absent from the baseline — the tool must supply these
+# ---------------------------------------------------------------------------
+
+required_but_absent:
+
+  - role: management
+    why: >-
+      Built-in anti-lockout binds only to the pfSense "lan" interface, which on
+      dsoc is the SERVER segment. Analysts on dsoc_ws therefore have no
+      anti-lockout protection at all. A self-authored floating quick rule gives
+      uniform coverage across every enclave regardless of which interface
+      happens to be lan, and satisfies the BT obligation to keep remote admin
+      reachable from the same-enclave workstation segment.
+    shape:
+      floating: true
+      quick: true
+      direction: in
+      interface: [all internal]
+      type: pass
+      protocol: tcp
+      source: { alias: Mgmt_Sources }
+      destination: this firewall
+      ports: [443, 22]
+      descr: "BTHT | MGMT ACCESS | DO NOT REMOVE"
+    validator: V-MGMT-ABSENT
+
+  - role: scoring
+    why: >-
+      No alias or rule in the baseline identifies availability-probe or Yellow
+      Team usersim sources. The wide-open WAN rule is silently doing that job.
+      Removing it without replacement stops scoring.
+    resolved: >-
+      Topology recovered 21 Aug 26 — see isa-checks.yaml scoring_sources.
+      Deployed: local bot at <ws_subnet>.254. Host Nation: served from GOV at
+      10.{X}.1.254. Central monitor at 10.181.2.214. YT usersims arrive within
+      the existing Remote_Access ranges. The scored host:port set comes from the
+      ISA Target Checks Status board, not from guesswork.
+    shape:
+      floating: true
+      quick: true
+      source: { alias: Scoring_Sources }
+      destination: "per-host, from the ISA check assignment"
+      descr: "BTHT | SCORING | <target> <check> - DO NOT REMOVE"
+    note: >-
+      Include the FIREWALL ITSELF as a target — it is scored on HOST, SSH, HTTPS
+      and Graynet Access. A management lockdown that omits the scoring source
+      costs points directly.
+    validator: V-SCORING-ABSENT
+
+  - role: threat_block
+    why: >-
+      Not required by the baseline, but every DCM26 team eventually needed one.
+      The post-compromise DO config carried a BLOCKED_IPs alias with a confirmed
+      Red address. Ship it pre-wired and empty so adding an IOC mid-exercise is
+      one field, not a design decision.
+    shape:
+      floating: true
+      quick: true
+      type: block
+      log: true
+      position: "top of the floating tab"
+      source: { alias: BLOCKED_IPs }
+      descr: "BTHT | THREAT BLOCK | IOC list"

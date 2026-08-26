@@ -1,0 +1,177 @@
+# BT Hardening Tool — estate policy, worked example
+#
+# This EXAMPLE uses illustrative values throughout.
+#
+# This is the durable artefact. It is the source of truth, it diffs in a text
+# editor, it is the shift handover, and it is most of the post-exercise
+# write-up. The web app is an editor over this file, not a replacement for it.
+
+version: 1
+
+estate:
+  team: 14
+  exercise: DCM27
+  author: "BT14 network cell"
+  notes: "Phase 1 baseline hardening. Reviewed by <name> before apply."
+
+# ---------------------------------------------------------------------------
+# Shared aliases — emitted to every firewall that references them
+# ---------------------------------------------------------------------------
+
+aliases:
+
+  # Management sources. Feeds the mandatory MGMT ACCESS rule.
+  # Include Remote_Access or you lose VPN access to the firewall GUI.
+  - name: Mgmt_Sources
+    type: network
+    lockout_critical: true
+    entries:
+      - alias: Remote_Access        # nested; preserves GT's VPN ranges
+      - segment: ws                 # this enclave's own workstation segment
+    descr: "Where firewall administration may originate"
+
+  # BLOCKED until Green Team supply the ranges. See OPEN-QUESTIONS.md Q1.
+  # While this is empty, V-SCORING-ABSENT fires on every export.
+  - name: Scoring_Sources
+    type: network
+    entries: []
+    descr: "Availability probe sources — AWAITING GT"
+
+  - name: YT_Usersim_Sources
+    type: network
+    entries: []
+    descr: "Yellow Team usersim sources, arriving via Greynet — AWAITING GT"
+
+  - name: DNS_Servers
+    type: host
+    entries: ["10.181.0.11", "10.181.0.12"]
+    descr: "Upstream DNS"
+
+  - name: Elastic_Stack
+    type: host
+    entries:
+      - "25.14.7.20"                # Fleet Server        ] illustrative —
+      - "25.14.7.21"                # Elasticsearch       ] confirm against
+      - "25.14.7.22"                # Logstash            ] the actual build
+    descr: "SOC enclave Elastic components"
+
+# ---------------------------------------------------------------------------
+# Cross-enclave dependencies
+# ---------------------------------------------------------------------------
+# Declared once. The generator emits the egress rule on the source firewall AND
+# the ingress rule on the destination firewall, and V-CROSS-ENCLAVE-ORPHAN
+# fires if either goes missing later.
+
+dependencies:
+
+  - name: "Elastic Agent to Fleet"
+    from: { enclaves: [do, ds], segments: [ws, svrs, dmz] }
+    to:   { enclave: dsoc, alias: Elastic_Stack }
+    protocol: tcp
+    ports: [8220]
+    notes: >-
+      Agents initiate outbound, so inbound default-deny does not affect them.
+      An egress default-deny WILL sever them, and the failure is silent — the
+      agent buffers, then drops events. Re-enrolment after an agent restart also
+      needs this path.
+
+  - name: "Elastic Agent to Elasticsearch"
+    from: { enclaves: [do, ds], segments: [ws, svrs, dmz] }
+    to:   { enclave: dsoc, alias: Elastic_Stack }
+    protocol: tcp
+    ports: [9200]
+
+  - name: "Beats to Logstash"
+    from: { enclaves: [do, ds], segments: [svrs] }
+    to:   { enclave: dsoc, alias: Elastic_Stack }
+    protocol: tcp
+    ports: [5044]
+
+  - name: "Analyst access to Kibana"
+    from: { enclave: dsoc, segments: [ws] }
+    to:   { enclave: dsoc, alias: Elastic_Stack }
+    protocol: tcp
+    ports: [5601]
+
+# ---------------------------------------------------------------------------
+# Per-firewall policy
+# ---------------------------------------------------------------------------
+# Only enclave_policy rules are declared here. The MGMT ACCESS, SCORING and
+# ESSENTIAL SERVICES blocks and the trailing BLOCK ALL are generated
+# automatically in the correct positions — do not hand-write them.
+
+firewalls:
+
+  - enclave: do
+    baseline: "baselines/fw1.do.14.dcm.ex.xml"    # not committed; local path
+
+    services:
+      - name: "Web DMZ"
+        segment: dmz
+        host: "25.14.11.10"
+        protocol: tcp
+        ports: [80, 443]
+        from: any
+        notes: "Scored target. Usersims reach this via Greynet."
+
+      - name: "AD / DC"
+        segment: svrs
+        host: "25.14.10.5"
+        protocol: tcp
+        ports: [53, 88, 135, 389, 445, 464, 636, 3268, 3269]
+        from: { segments: [ws, svrs] }
+
+      - name: "RDP to workstations"
+        segment: ws
+        protocol: tcp
+        ports: [3389]
+        from: { alias: YT_Usersim_Sources }
+        notes: >-
+          BT technical obligation — usersims need this. Ignoring their
+          complaints is a scored penalty.
+
+    egress:
+      default: deny_and_log
+      allow:
+        - { from: { segments: [ws, svrs, dmz] }, to: { alias: DNS_Servers }, protocol: tcp/udp, ports: [53] }
+        - { from: { segments: [ws, svrs, dmz] }, to: { host: "25.14.10.11" }, protocol: udp, ports: [123] }
+      notes: >-
+        Default-deny egress with logging is good beacon-detection practice, but
+        it is also what silently severs Elastic Agent from Fleet. The
+        dependencies block above is emitted above this deny automatically.
+
+  - enclave: ds
+    baseline: "baselines/fw1.ds.14.dcm.ex.xml"
+    services:
+      - name: "UAV control"
+        segment: uav
+        protocol: tcp
+        ports: [8080]
+        from: { segments: [ws] }
+    egress:
+      default: deny_and_log
+
+  - enclave: dsoc
+    baseline: "baselines/fw1.dsoc.14.dcm.ex.xml"
+    # REMINDER: on dsoc, "lan" is the SERVER segment and "opt1" is workstations.
+    # Always refer to segments by role (ws / svrs), never by pfSense ifname.
+    services:
+      - name: "Elastic ingest"
+        segment: svrs
+        alias: Elastic_Stack
+        protocol: tcp
+        ports: [8220, 9200, 5044]
+        from: { enclaves: [do, ds] }
+    egress:
+      default: deny_and_log
+
+# ---------------------------------------------------------------------------
+# Generation options
+# ---------------------------------------------------------------------------
+
+options:
+  mandatory_blocks_placement: floating    # "floating" (default) or "per_interface"
+  emit_separators: true
+  emit_trackers: true
+  dual_stack: require                     # "require" | "warn"
+  icmp6_minimum: [2, 128, 129, 133, 134, 135, 136]

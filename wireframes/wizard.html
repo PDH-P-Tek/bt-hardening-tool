@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BT Hardening Tool — Wizard Wireframe</title>
+<style>
+:root{
+  --bg:#f4f5f7; --panel:#fff; --ink:#1a1d21; --muted:#5c6470; --line:#d8dce2;
+  --accent:#1f5f8b; --accent-soft:#e8f1f7;
+  --ok:#1e6b45; --ok-soft:#e6f2ec;
+  --warn:#8a5a00; --warn-soft:#fdf3e0;
+  --err:#9a2c2c; --err-soft:#fbecec;
+  --crit:#7a2b6b; --crit-soft:#f7ebf5;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --bg:#14171a; --panel:#1c2025; --ink:#e6e8eb; --muted:#98a1ad; --line:#2f353d;
+    --accent:#6fa8cc; --accent-soft:#1b2a35;
+    --ok:#7cc4a0; --ok-soft:#16241d;
+    --warn:#e0b25e; --warn-soft:#2a2115;
+    --err:#e08a8a; --err-soft:#2b1a1a;
+    --crit:#d69ac9; --crit-soft:#281a26;
+  }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+.wrap{max-width:1120px;margin:0 auto;padding:24px 20px 80px}
+.note{background:var(--warn-soft);border:1px solid var(--warn);color:var(--warn);
+  padding:10px 14px;border-radius:6px;font-size:13px;margin-bottom:20px}
+h1{font-size:19px;margin:0 0 4px}
+.sub{color:var(--muted);font-size:13px;margin-bottom:20px}
+
+.steps{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:18px}
+.steps button{background:var(--panel);border:1px solid var(--line);color:var(--muted);
+  padding:6px 12px;border-radius:6px;cursor:pointer;font:inherit;font-size:12.5px;white-space:nowrap}
+.steps button[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:#fff}
+.steps span.n{opacity:.6;margin-right:5px}
+
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.chead{padding:16px 22px;border-bottom:1px solid var(--line)}
+.chead h2{margin:0 0 3px;font-size:17px}
+.chead .ctx{font-family:var(--mono);font-size:12px;color:var(--muted)}
+.cbody{padding:20px 22px}
+.cfoot{padding:13px 22px;border-top:1px solid var(--line);background:var(--bg);
+  display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.cfoot .spacer{flex:1}
+.btn{font:inherit;font-size:13.5px;padding:8px 16px;border-radius:6px;cursor:pointer;
+  border:1px solid var(--line);background:var(--panel);color:var(--ink)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.ghost{border-style:dashed;color:var(--accent)}
+.hint{font-size:12px;color:var(--muted)}
+
+.q{font-size:16px;margin:0 0 4px}
+.qh{font-size:13px;color:var(--muted);margin:0 0 16px}
+.paste{background:var(--accent-soft);border:1px dashed var(--accent);border-radius:7px;
+  padding:11px 14px;font-size:13px;margin-bottom:18px;display:flex;gap:12px;align-items:center}
+.paste .grow{flex:1}
+.paste b{color:var(--accent)}
+
+table{width:100%;border-collapse:collapse;font-size:13.5px;margin-bottom:6px}
+th{text-align:left;font-size:11px;letter-spacing:.05em;text-transform:uppercase;
+  color:var(--muted);font-weight:600;padding:0 10px 6px 0;border-bottom:1px solid var(--line)}
+td{padding:7px 10px 7px 0;border-bottom:1px solid var(--line);vertical-align:top}
+td.mono,.mono{font-family:var(--mono);font-size:12.5px}
+input[type=text],select{font:inherit;font-size:13px;padding:5px 7px;border:1px solid var(--line);
+  border-radius:5px;background:var(--panel);color:var(--ink);width:100%}
+input.num{width:64px}
+
+.tag{font-size:10px;letter-spacing:.05em;text-transform:uppercase;padding:2px 7px;
+  border-radius:4px;border:1px solid;white-space:nowrap}
+.tag.oob{background:var(--crit-soft);border-color:var(--crit);color:var(--crit)}
+.tag.std{background:var(--ok-soft);border-color:var(--ok);color:var(--ok)}
+.tag.asm{background:var(--warn-soft);border-color:var(--warn);color:var(--warn)}
+.tag.unv{background:var(--err-soft);border-color:var(--err);color:var(--err)}
+
+.callout{border-left:3px solid;padding:9px 13px;border-radius:0 5px 5px 0;font-size:13px;margin:14px 0}
+.callout.crit{background:var(--crit-soft);border-color:var(--crit)}
+.callout.warn{background:var(--warn-soft);border-color:var(--warn)}
+.callout.info{background:var(--accent-soft);border-color:var(--accent)}
+
+ul.checks{list-style:none;margin:0;padding:0}
+ul.checks li{padding:8px 0;border-bottom:1px solid var(--line);display:flex;gap:10px;align-items:flex-start}
+ul.checks li:last-child{border-bottom:none}
+ul.checks input{margin-top:3px}
+ul.checks .txt{flex:1}
+ul.checks .gen{font-family:var(--mono);font-size:11.5px;color:var(--muted);margin-top:3px}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:5px}
+.chip{font-family:var(--mono);font-size:11px;padding:2px 7px;border-radius:11px;
+  border:1px solid var(--line);background:var(--bg)}
+.chip.on{background:var(--ok-soft);border-color:var(--ok);color:var(--ok)}
+
+.annot{margin-top:24px;padding:16px 20px;border:1px dashed var(--line);border-radius:8px;
+  background:var(--panel);font-size:13.5px}
+.annot h3{margin:0 0 10px;font-size:14px}
+.annot ol{margin:0;padding-left:20px}
+.annot li{margin-bottom:7px}
+.annot code{font-family:var(--mono);font-size:12px;background:var(--bg);padding:1px 5px;border-radius:3px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<div class="note"><strong>Wireframe — flow and content only.</strong> Not production styling. Addresses in templated <code>{X}</code> form.</div>
+
+<h1>Firewall wizard</h1>
+<div class="sub">BT Hardening Tool · WORKFLOW.md §2 · ~20 min per firewall, run off-range from the documents</div>
+
+<div class="steps" id="steps"></div>
+<div class="card">
+  <div class="chead">
+    <h2 id="t"></h2>
+    <div class="ctx">Estate BT-{XX} &nbsp;·&nbsp; Deployed Official &nbsp;·&nbsp; fw1.do.{XX}.dcm.ex &nbsp;·&nbsp; source: Annex A Rev B2</div>
+  </div>
+  <div class="cbody" id="b"></div>
+  <div class="cfoot">
+    <span class="hint" id="h"></span><span class="spacer"></span>
+    <button class="btn">Back</button><button class="btn primary">Continue</button>
+  </div>
+</div>
+
+<div class="annot">
+  <h3>Design notes</h3>
+  <ol>
+    <li><strong>Every step is completable by typing.</strong> Paste is an accelerator, never a requirement — the annex format will change between revisions and the paste will sometimes fail. A wizard that only works when the paste works is a wizard that fails on the morning it matters.</li>
+    <li><strong>Parses render back for confirmation.</strong> Silent mis-parse is the failure mode to design against, not parse failure. Failure is visible; a wrong subnet is not.</li>
+    <li><strong>Out-of-Bounds hosts are surfaced loudly at step 3</strong>, because <code>scoringbot</code> and <code>npc-server</code> sit inside the workstation segment and appear on no range diagram. Tightening that segment without knowing is how teams kill their own scoring from the inside.</li>
+    <li><strong>Step 4 is the highest-value screen in the tool.</strong> The annexes contain no port numbers; the ISA board contains all of them. Defaults come from <code>isa-checks.yaml</code>, the operator confirms against the live board.</li>
+    <li><strong>Confidence is shown, not hidden.</strong> <span class="tag std">standard</span> <span class="tag asm">assumed</span> <span class="tag unv">unverified</span> — allow-all on an unknown service is the right day-one call, and the wrong day-three one. Visibility is what makes the difference.</li>
+    <li><strong>Step 5 is confirmation, not authoring.</strong> §2.6 is Green Team's stated baseline. The operator validates it; original thinking belongs in step 6.</li>
+    <li><strong>Step 6 carries the warning</strong> because a bare egress deny is where teams historically break Elastic, the NPC server's scored outbound path, and any Graynet Access check — all silently.</li>
+  </ol>
+</div>
+
+</div>
+
+<script>
+const S=[
+{n:'1',k:'Interfaces',t:'How many interfaces besides WAN?',
+ hint:'From annex §1.2. DO has 3, DS has 4, MCU has 5.',
+ b:`<p class="q">How many interfaces does this firewall have, not counting WAN?</p>
+    <p class="qh">Count the rows in the annex §1.2 Subnets table.</p>
+    <input class="num" type="text" value="3"> &nbsp;<span class="hint">interfaces</span>
+    <div class="callout info"><b>Annex A DO §1.2</b> lists DMZ, Servers and Workstations — 3 interfaces plus WAN.</div>`},
+
+{n:'2',k:'Name & address',t:'Name and address each interface',
+ hint:'IPv6 is not optional — availability on both families is scored.',
+ b:`<div class="paste"><div class="grow"><b>Shortcut.</b> Select the §1.2 table in the PDF, copy, and paste here. Parsed result shown back for confirmation.</div><button class="btn ghost">Paste table</button></div>
+    <table><tr><th>Segment name</th><th>Role</th><th>IPv4</th><th>IPv6</th><th>pfSense if</th></tr>
+    <tr><td><input type="text" value="Workstations"></td><td><select><option>ws</option><option>svrs</option><option>dmz</option></select></td><td class="mono">25.{X}.9.0/24</td><td class="mono">fd81:25:{X}:9::/64</td><td class="mono">lan</td></tr>
+    <tr><td><input type="text" value="Servers"></td><td><select><option>svrs</option><option>ws</option><option>dmz</option></select></td><td class="mono">25.{X}.10.0/24</td><td class="mono">fd81:25:{X}:10::/64</td><td class="mono">opt1</td></tr>
+    <tr><td><input type="text" value="DMZ"></td><td><select><option>dmz</option><option>ws</option><option>svrs</option></select></td><td class="mono">25.{X}.11.0/24</td><td class="mono">fd81:25:{X}:11::/64</td><td class="mono">opt2</td></tr></table>
+    <div class="callout warn"><b>Role, not pfSense name.</b> On <code>dsoc</code>, <code>lan</code> is the <em>server</em> segment. Built-in anti-lockout binds to <code>lan</code>, so on that firewall it protects servers and analysts have no safety net. All matching uses the role; only emission uses the ifname.</div>`},
+
+{n:'3',k:'Hosts',t:'What runs on each interface?',
+ hint:'Roles auto-suggested from hostname. 2 out-of-bounds hosts detected.',
+ b:`<div class="paste"><div class="grow"><b>Shortcut.</b> Paste the whole §2.5 Known Device List. Hosts are assigned to segments by subnet and roles matched by hostname — including the IPv6 addresses nobody types by hand.</div><button class="btn ghost">Paste table</button></div>
+    <p class="q" style="font-size:14px">Servers &nbsp;<span class="hint mono">25.{X}.10.0/24</span></p>
+    <table><tr><th>Host</th><th>IPv4</th><th>Role (suggested)</th><th>Ports</th></tr>
+    <tr><td class="mono">dc01</td><td class="mono">.10.11</td><td>Domain controller</td><td><span class="tag std">standard</span></td></tr>
+    <tr><td class="mono">dc02</td><td class="mono">.10.12</td><td>Domain controller</td><td><span class="tag std">standard</span></td></tr>
+    <tr><td class="mono">mail</td><td class="mono">.10.25</td><td>Exchange</td><td><span class="tag std">standard</span></td></tr>
+    <tr><td class="mono">fs</td><td class="mono">.10.139</td><td>File server</td><td><span class="tag std">standard</span></td></tr>
+    <tr><td class="mono">nextcloud</td><td class="mono">.10.7</td><td>Nextcloud</td><td><span class="tag std">standard</span></td></tr>
+    <tr><td class="mono">apj</td><td class="mono">.10.6</td><td><select><option>— unknown —</option><option>web app</option></select></td><td><span class="tag unv">unverified</span></td></tr>
+    <tr><td class="mono">modgpt</td><td class="mono">.10.8</td><td><select><option>— unknown —</option><option>web app</option></select></td><td><span class="tag unv">unverified</span></td></tr></table>
+    <p class="q" style="font-size:14px;margin-top:18px">Workstations &nbsp;<span class="hint mono">25.{X}.9.0/24</span></p>
+    <table><tr><th>Host</th><th>IPv4</th><th>Role</th><th></th></tr>
+    <tr><td class="mono">ws101–ws110</td><td class="mono">.9.2–.9.11</td><td>Windows 10 workstation</td><td></td></tr>
+    <tr><td class="mono">ws201–ws210</td><td class="mono">.9.31–.9.40</td><td>Windows 11 workstation</td><td></td></tr>
+    <tr><td class="mono">ws301–ws405</td><td class="mono">.9.60–.9.84</td><td>Ubuntu workstation</td><td></td></tr>
+    <tr><td class="mono">scoringbot</td><td class="mono">.9.254</td><td>EXCON — scoring</td><td><span class="tag oob">out of bounds</span></td></tr>
+    <tr><td class="mono">npc-server-do</td><td class="mono">.9.249</td><td>EXCON — usersim control</td><td><span class="tag oob">out of bounds</span></td></tr></table>
+    <div class="callout crit"><b>Two out-of-bounds EXCON hosts sit inside the workstation segment</b>, and neither appears on the range diagram. <code>scoringbot</code> runs availability checks against your servers and DMZ, so those checks cross this firewall. <code>npc-server</code>'s outbound path is itself a scored obligation. Both are protected: never blocked, never a policy target.</div>`},
+
+{n:'4',k:'ISA checks',t:'Which ISA checks apply?',
+ hint:'Defaults pre-loaded. Confirm against the live board — it is authoritative.',
+ b:`<div class="callout info"><b>Open ISA → Situational Awareness → Target Checks Status</b> and filter to your team. Each card lists the checks against one target. <b>Those names are the scored port list.</b> Everything checked must stay reachable; everything else is yours to close. Fifteen minutes here replaces a day of guessing.</div>
+    <ul class="checks">
+      <li><input type="checkbox" checked><div class="txt"><b>dc01, dc02</b> — domain controller
+        <div class="chips"><span class="chip on">HOST</span><span class="chip on">AD DS Web</span><span class="chip on">DNS</span><span class="chip on">Kerberos/88</span><span class="chip on">Kerberos/464</span><span class="chip on">LDAP</span><span class="chip on">LDAP GC</span><span class="chip on">NetBIOS</span><span class="chip on">RDP</span><span class="chip on">RPC</span><span class="chip on">SMB</span></div>
+        <div class="gen">→ 11 SCORING rules, dual-stack, source Scoring_Sources</div></div></li>
+      <li><input type="checkbox" checked><div class="txt"><b>mail</b> — Exchange
+        <div class="chips"><span class="chip on">HOST</span><span class="chip on">SMTP</span><span class="chip on">HTTP</span><span class="chip on">HTTPS</span><span class="chip on">RDP</span></div></div></li>
+      <li><input type="checkbox" checked><div class="txt"><b>ws101–ws210</b> — Windows workstations
+        <div class="chips"><span class="chip on">HOST</span><span class="chip on">RDP</span></div></div></li>
+      <li><input type="checkbox" checked><div class="txt"><b>fw1</b> — this firewall
+        <div class="chips"><span class="chip on">HOST</span><span class="chip on">SSH</span><span class="chip on">HTTPS</span><span class="chip on">Graynet Access</span></div>
+        <div class="gen">→ Scoring_Sources must reach 22 + 443 on the firewall; firewall egress must stay open</div></div></li>
+      <li><input type="checkbox"><div class="txt"><b>apj, modgpt</b> — no checks observed
+        <div class="gen">unscored — the cheapest place to harden</div></div></li>
+    </ul>
+    <div class="callout warn"><b>The firewall is a scored target.</b> A management lockdown that blocks the scoring source from 22/443 costs points directly, and <code>Graynet Access</code> is an <em>egress</em> check — no ingress rule satisfies it. Two DCM26 enclaves shipped a <code>BLOCK_ALL_FW_EGRESS</code> rule that would fail it outright.</div>`},
+
+{n:'5',k:'Connectivity',t:'Confirm the connectivity requirements',
+ hint:'Pre-ticked from annex §2.6. You are confirming, not authoring.',
+ b:`<ul class="checks">
+      <li><input type="checkbox" checked><div class="txt">Communication must be open between workstation and server networks.<div class="gen">ws ↔ svrs permit, dual-stack</div></div></li>
+      <li><input type="checkbox" checked><div class="txt">Services in the DO DMZ are public facing and must be externally accessible from greynet and to user simulators.<div class="gen">WAN → dmz, scoped to DMZ service ports</div></div></li>
+      <li><input type="checkbox" checked><div class="txt">DNS queries to the domain controllers.<div class="gen">→ DO_DCs tcp/udp 53</div></div></li>
+      <li><input type="checkbox" checked><div class="txt">Yellow Team user simulators must be able to remotely access workstations (RDP / SSH) via their range VPN.<div class="gen">Remote_Access → ws tcp 3389, 22</div></div></li>
+      <li><input type="checkbox" checked><div class="txt">Outlook Web Access must be enabled on the mail server.<div class="gen">→ mail tcp 443</div></div></li>
+      <li><input type="checkbox" checked><div class="txt">Workstations, servers and DMZ must reach greynet.</div></li>
+      <li><input type="checkbox" checked><div class="txt">DNS queries to the range core resolvers in greynet.<div class="gen">→ 10.181.0.11, 10.181.0.12 tcp/udp 53</div></div></li>
+    </ul>
+    <div class="callout warn"><b>Read your own annex.</b> DO sends DNS to the domain controllers; BANK sends it to the DMZ proxy. Scoring source, DNS destination and EXCON host listings all vary between enclaves — nothing here is hardcoded.</div>`},
+
+{n:'6',k:'Egress',t:'Egress posture per segment',
+ hint:'Mandatory allows are inserted above the deny automatically.',
+ b:`<table><tr><th>Segment</th><th>Posture</th><th>Effect</th></tr>
+    <tr><td>Workstations</td><td><select><option>Deny and log</option><option>Permit</option></select></td><td class="hint">Beacon detection; scored paths preserved above</td></tr>
+    <tr><td>Servers</td><td><select><option>Deny and log</option><option>Permit</option></select></td><td class="hint">Same</td></tr>
+    <tr><td>DMZ</td><td><select><option>Deny and log</option><option>Permit</option></select></td><td class="hint">Same</td></tr></table>
+    <div class="callout crit"><b>This is where teams historically break things.</b> A bare egress deny severs Elastic Agent from Fleet — silently, because the agent buffers and then drops events — kills the NPC server's scored outbound path, and fails any Graynet Access check. Those allows are generated above your deny automatically. Do not hand-edit them out.</div>
+    <div class="callout info">Generated for this firewall: <b>4 mandatory blocks</b> (threat, management, scoring, out-of-bounds), <b>7 policy rules</b>, <b>2 UNVERIFIED allow-alls</b> (<code>apj</code>, <code>modgpt</code>), <b>3 deny-and-log</b>. Next: ingest the live config, then review the diff.</div>`}
+];
+
+const steps=document.getElementById('steps');
+function render(i){
+  const s=S[i];
+  document.getElementById('t').textContent=s.t;
+  document.getElementById('b').innerHTML=s.b;
+  document.getElementById('h').textContent=s.hint;
+  [...steps.children].forEach((b,j)=>b.setAttribute('aria-pressed',j===i));
+}
+S.forEach((s,i)=>{
+  const b=document.createElement('button');
+  b.innerHTML='<span class="n">'+s.n+'</span>'+s.k;
+  b.onclick=()=>render(i); steps.appendChild(b);
+});
+render(0);
+</script>
+</body>
+</html>

@@ -1,0 +1,212 @@
+# BT Hardening Tool — ISA check catalogue
+#
+# Derived from DCM26 range material.
+#
+# WHY THIS FILE IS THE MOST IMPORTANT ONE IN THE PACKAGE
+#
+# The enclave Technical Annexes give hostnames, addresses and roles but NO port
+# numbers. The ISA Target Checks Status page (https://isa.crp.cr14.net,
+# Situational Awareness -> Target Checks Status) lists, per target, exactly which
+# checks run against it. Those check names ARE the scored port list.
+#
+# So the unknown-ports problem is not solved by guessing or by scanning. It is
+# solved by reading ISA on day one and ticking boxes. Everything ISA checks MUST
+# stay reachable; everything else is discretionary and may be closed.
+#
+# Check names below were read from the DCM26 ISA board for one team across all
+# enclaves. Port mappings are inferred from the check name plus the target's role
+# in the annex. Where inference is uncertain it is marked.
+#
+# The generator uses this file twice:
+#   1. To emit SCORING-role allow rules (mandatory, non-removable)
+#   2. To emit the post-apply verification manifest (VERIFICATION.md)
+
+version: 1
+source:
+  system: "ISA — Situational Awareness > Target Checks Status"
+  observed: DCM26
+  note: >-
+    Read from a single team's board. Check sets are believed consistent per
+    target role across teams, but confirm on day one — the board is visible to
+    Blue Teams from the start and takes minutes to read.
+
+# ---------------------------------------------------------------------------
+# Check name -> protocol and ports
+# ---------------------------------------------------------------------------
+
+checks:
+
+  HOST:            { proto: icmp,    ports: [],            note: "ICMP echo. Blocking ICMP anywhere on the path fails this." }
+  SSH:             { proto: tcp,     ports: [22] }
+  RDP:             { proto: tcp,     ports: [3389],        also_udp: [3389] }
+  HTTP:            { proto: tcp,     ports: [80] }
+  HTTPS:           { proto: tcp,     ports: [443] }
+  SMTP:            { proto: tcp,     ports: [25] }
+  DNS:             { proto: tcp/udp, ports: [53] }
+  LDAP:            { proto: tcp,     ports: [389] }
+  "LDAP GC":       { proto: tcp,     ports: [3268, 3269],  label: "LDAP Global Catalog" }
+  "Kerberos/TCP/88":  { proto: tcp,  ports: [88] }
+  "Kerberos/TCP/464": { proto: tcp,  ports: [464],         label: "kpasswd" }
+  "AD DS Web":     { proto: tcp,     ports: [9389],        label: "AD DS Web Services / ADWS" }
+  NetBIOS:         { proto: tcp,     ports: [139],         also_udp: [137, 138] }
+  RPC:             { proto: tcp,     ports: [135],         note: "Endpoint mapper only. AD replication additionally needs the dynamic range — see service-catalogue.yaml." }
+  SMB:             { proto: tcp,     ports: [445] }
+  MARIADB:         { proto: tcp,     ports: [3306] }
+  MySQL:           { proto: tcp,     ports: [3306] }
+  PG_PC:           { proto: tcp,     ports: [5432],        confidence: assumed, note: "PostgreSQL. Seen on HMI.HVAC.HNDC." }
+  VNC:             { proto: tcp,     ports: [5900],        confidence: assumed }
+  fs:              { proto: tcp,     ports: [445],         confidence: assumed, note: "File-share content check on fs.bank. Assumed SMB." }
+
+  # Non-port checks — cannot be satisfied by an ingress rule alone
+  "Graynet Access":
+    proto: egress
+    ports: []
+    note: >-
+      CRITICAL. Verifies the TARGET can reach the greynet. Observed on fw1.mil.
+      An egress deny on the device — or a floating BLOCK_ALL_FW_EGRESS rule on
+      the firewall itself — fails this check. Two DCM26 enclaves shipped exactly
+      such a rule. See EVIDENCE.md E6.
+  "Agents Status":
+    proto: egress
+    ports: []
+    note: >-
+      NPC / usersim agent callback health, observed on npc-server-*. Requires the
+      NPC server's outbound path to remain open. Annex A DO §2.2 states this
+      explicitly as a scored obligation.
+  "Power Status":
+    proto: application
+    ports: []
+    confidence: unknown
+    note: "OT check on rtu.mil. Application-level, likely over an existing SSH/HTTP path."
+  Production:
+    proto: application
+    ports: []
+    confidence: unknown
+    note: "OT check on solar-coms.mil."
+  "31-HOST":       { proto: icmp, ports: [], confidence: unknown, note: "Secondary target on rtu.mil — likely a second interface or downstream device." }
+  "31-HTTPS":      { proto: tcp,  ports: [443], confidence: unknown }
+
+# ---------------------------------------------------------------------------
+# Observed check sets by target role
+# ---------------------------------------------------------------------------
+# Offer these as the default tick-list in the wizard. The operator confirms
+# against the live ISA board rather than typing.
+
+role_check_sets:
+
+  domain_controller:
+    checks: [HOST, "AD DS Web", DNS, "Kerberos/TCP/88", "Kerberos/TCP/464", LDAP, "LDAP GC", NetBIOS, RDP, RPC, SMB]
+    note: "Eleven checks. The heaviest scored target in the estate — and the easiest to half-break."
+
+  mail_server:
+    checks: [HOST, SMTP, HTTP, HTTPS, RDP]
+    note: "HTTPS is OWA, required by the annex §2.6 in both DO and BANK."
+
+  file_server:
+    checks: [HOST, RDP, fs]
+
+  windows_workstation:
+    checks: [HOST, RDP]
+
+  linux_workstation:
+    checks: [HOST, SSH]
+
+  web_server:
+    checks: [HOST, HTTP, HTTPS, SSH, MARIADB]
+    note: "MARIADB observed on www.bank and gallery.mil — the DB check runs against the web host, not the DB host."
+
+  proxy:
+    checks: [HOST, HTTP, HTTPS, SSH]
+
+  database:
+    checks: [HOST, SSH]
+    note: "Note the DB engine port is NOT checked on database.bank — only SSH. Do not infer the reverse."
+
+  nextcloud:
+    checks: [HOST, HTTP, HTTPS, SSH]
+
+  router:
+    checks: [HOST, SSH]
+
+  firewall:
+    checks: [HOST, SSH, HTTPS, "Graynet Access"]
+    note: >-
+      THE FIREWALL IS ITSELF A SCORED TARGET. A management lockdown that blocks
+      the scoring bot from SSH/443 to the firewall costs points directly, and an
+      egress block on the firewall fails Graynet Access.
+
+  plc:
+    checks: [HOST, SSH]
+
+  historian:
+    checks: [HOST, SSH, HTTP, MySQL]
+
+  hmi:
+    checks: [HOST, SSH, HTTP]
+
+  npc_server:
+    checks: [HOST, "Agents Status"]
+
+  sat_service:
+    checks: [HOST, SSH]
+    note: "mq, redis, pgsql, influxdb, consul on the mil satellite segment — all HOST + SSH only."
+
+# ---------------------------------------------------------------------------
+# Scoring source topology
+# ---------------------------------------------------------------------------
+
+scoring_sources:
+
+  deployed_enclaves:
+    pattern: "<workstation_subnet>.254"
+    evidence:
+      - "Annex A DO §2.5 lists scoringbot at 25.XX.9.254 / fd81:25:XX:9::254, 'Not shown on diagram', Out of Bounds"
+      - "DCM26 DO end-state config aliased Scoring_Bot = 25.14.9.254"
+    note: >-
+      Each deployed enclave has its own scoring bot INSIDE the workstation
+      segment. Checks against servers and DMZ therefore cross the firewall as
+      ws->svrs and ws->dmz traffic. Tightening inter-segment rules kills scoring
+      from the inside.
+
+  host_nation_enclaves:
+    pattern: "Scoring bot in GOV reaches all HN enclaves"
+    address_observed: "10.XX.1.254  (GOV workstation subnet)"
+    evidence:
+      - "Annex G BANK §2.6: 'Scoringbot in Host Nation Government (GOV) must be able to communicate with all DNMP systems for availability scoring purposes.'"
+      - "DCM26 BANK end-state config aliased MONITOR_HOSTS = 10.14.1.254, 10.181.2.214"
+    note: >-
+      HN enclaves do NOT each host a bot. One in GOV serves them all, so for
+      every HN enclave except GOV the scoring source is EXTERNAL and arrives
+      over the HN WAN.
+
+  central_monitor:
+    address: "10.181.2.214"
+    note: >-
+      Observed in both MCU and BANK end-state configs. Sits in 10.181.0.0/16,
+      the range core services block that also holds the DNS resolvers
+      (10.181.0.11, 10.181.0.12). Believed to be the ISA platform monitor.
+      Confirm scope with GT.
+
+  usersims:
+    team: "Yellow Team (YT)"
+    source: "Range VPN — arrives within the existing Remote_Access alias ranges"
+    evidence:
+      - "Annex A DO and Annex G BANK §2.6: 'Yellow Team User simulators must be able to remotely access workstations (i.e. RDP / SSH) via their range VPN.'"
+      - "DCM26 BANK end-state rules permit Remote_Access explicitly described as 'allow scoring and user simulator'"
+    note: >-
+      No separate YT entry appears in the Remote_Access <detail> field, which
+      decodes to GT VPN / WT VPN / BT VPN / GT Local / GT Tools. YT most likely
+      rides the White Team range. Confirm — but preserving Remote_Access intact
+      covers it either way.
+
+# ---------------------------------------------------------------------------
+# Generator rules
+# ---------------------------------------------------------------------------
+
+generation:
+  - "Every ticked ISA check emits a SCORING-role pass rule, dual-stack, above any deny."
+  - "SCORING rules are non-removable without typed confirmation."
+  - "Rule descriptions take the form: 'BTHT | SCORING | <target> <check> - DO NOT REMOVE'."
+  - "The same ticked set generates the post-apply verification manifest — see VERIFICATION.md."
+  - "A target with zero ticked checks raises V-SCORING-UNCHECKED (info): confirm it really is unscored."
+  - "Checks with proto 'egress' or 'application' cannot be satisfied by an ingress rule. They raise V-EGRESS-CHECK if the enclave's egress posture would block the target's outbound path."

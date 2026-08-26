@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BT Hardening Tool — Triage Modal Wireframe</title>
+<style>
+:root{
+  --bg:#f4f5f7; --panel:#ffffff; --ink:#1a1d21; --muted:#5c6470; --line:#d8dce2;
+  --accent:#1f5f8b; --accent-soft:#e8f1f7;
+  --ok:#1e6b45; --ok-soft:#e6f2ec;
+  --warn:#8a5a00; --warn-soft:#fdf3e0;
+  --err:#9a2c2c; --err-soft:#fbecec;
+  --crit:#7a2b6b; --crit-soft:#f7ebf5;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --bg:#14171a; --panel:#1c2025; --ink:#e6e8eb; --muted:#98a1ad; --line:#2f353d;
+    --accent:#6fa8cc; --accent-soft:#1b2a35;
+    --ok:#7cc4a0; --ok-soft:#16241d;
+    --warn:#e0b25e; --warn-soft:#2a2115;
+    --err:#e08a8a; --err-soft:#2b1a1a;
+    --crit:#d69ac9; --crit-soft:#281a26;
+  }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+.wrap{max-width:1180px;margin:0 auto;padding:24px 20px 80px}
+.note{background:var(--warn-soft);border:1px solid var(--warn);color:var(--warn);
+  padding:10px 14px;border-radius:6px;font-size:13px;margin-bottom:20px}
+h1{font-size:19px;margin:0 0 4px}
+.sub{color:var(--muted);font-size:13px;margin-bottom:20px}
+
+/* state switcher */
+.states{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:18px}
+.states button{background:var(--panel);border:1px solid var(--line);color:var(--muted);
+  padding:7px 14px;border-radius:20px;cursor:pointer;font-size:13px;font-family:inherit}
+.states button[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:#fff}
+
+/* modal shell */
+.modal{background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.mhead{padding:18px 22px;border-bottom:1px solid var(--line)}
+.mhead h2{margin:0 0 4px;font-size:17px}
+.ident{font-family:var(--mono);font-size:12px;color:var(--muted)}
+.counts{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.pill{font-size:12px;padding:3px 10px;border-radius:12px;border:1px solid}
+.pill.exact{background:var(--ok-soft);border-color:var(--ok);color:var(--ok)}
+.pill.similar{background:var(--warn-soft);border-color:var(--warn);color:var(--warn)}
+.pill.new{background:var(--err-soft);border-color:var(--err);color:var(--err)}
+
+.mbody{padding:0}
+.banner{padding:12px 22px;font-size:13px;border-bottom:1px solid var(--line)}
+.banner.ok{background:var(--ok-soft);color:var(--ok)}
+.banner.err{background:var(--err-soft);color:var(--err)}
+.banner strong{font-weight:600}
+
+/* rows */
+.row{border-bottom:1px solid var(--line);padding:14px 22px}
+.row:last-child{border-bottom:none}
+.rtop{display:flex;gap:12px;align-items:flex-start}
+.badge{flex:none;font-size:10px;letter-spacing:.06em;text-transform:uppercase;
+  padding:3px 8px;border-radius:4px;border:1px solid;margin-top:2px;white-space:nowrap}
+.badge.exact{background:var(--ok-soft);border-color:var(--ok);color:var(--ok)}
+.badge.similar{background:var(--warn-soft);border-color:var(--warn);color:var(--warn)}
+.badge.new{background:var(--err-soft);border-color:var(--err);color:var(--err)}
+.rmain{flex:1;min-width:0}
+.rname{font-family:var(--mono);font-size:12.5px;color:var(--muted);margin-bottom:3px}
+.plain{font-size:14.5px;margin-bottom:6px}
+.delta{background:var(--warn-soft);border-left:3px solid var(--warn);
+  padding:8px 12px;font-size:13px;margin:8px 0;border-radius:0 4px 4px 0}
+.delta code{font-family:var(--mono);font-size:12px}
+.refs{font-size:12px;color:var(--muted)}
+
+.controls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:10px}
+label.f{font-size:11px;color:var(--muted);display:block;margin-bottom:3px;
+  text-transform:uppercase;letter-spacing:.05em}
+select{font-family:inherit;font-size:13px;padding:6px 8px;border:1px solid var(--line);
+  border-radius:5px;background:var(--panel);color:var(--ink);min-width:170px}
+select.bad{border-color:var(--err);background:var(--err-soft)}
+.crit{display:flex;align-items:center;gap:6px;font-size:12px;padding:5px 10px;
+  border-radius:5px;background:var(--crit-soft);border:1px solid var(--crit);color:var(--crit)}
+.toggle{cursor:pointer}
+.raw{margin-top:10px}
+.raw summary{cursor:pointer;font-size:12px;color:var(--accent)}
+.raw pre{font-family:var(--mono);font-size:11.5px;background:var(--bg);
+  border:1px solid var(--line);padding:10px;border-radius:5px;overflow-x:auto;margin:8px 0 0}
+.rowerr{background:var(--err-soft);border-left:3px solid var(--err);padding:8px 12px;
+  font-size:13px;color:var(--err);margin-top:10px;border-radius:0 4px 4px 0}
+
+/* footer */
+.mfoot{padding:14px 22px;border-top:1px solid var(--line);display:flex;
+  gap:10px;align-items:center;flex-wrap:wrap;background:var(--bg)}
+.mfoot .spacer{flex:1}
+.btn{font-family:inherit;font-size:13.5px;padding:8px 18px;border-radius:6px;cursor:pointer;
+  border:1px solid var(--line);background:var(--panel);color:var(--ink)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.foothint{font-size:12px;color:var(--muted)}
+
+.annot{margin-top:26px;padding:16px 20px;border:1px dashed var(--line);
+  border-radius:8px;background:var(--panel);font-size:13.5px}
+.annot h3{margin:0 0 10px;font-size:14px}
+.annot ol{margin:0;padding-left:20px}
+.annot li{margin-bottom:7px}
+.annot code{font-family:var(--mono);font-size:12px;background:var(--bg);padding:1px 5px;border-radius:3px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<div class="note"><strong>Wireframe — layout and behaviour only.</strong> Not production styling. Addresses shown in templated <code>{X}</code> form.</div>
+
+<h1>Ingest triage modal</h1>
+<div class="sub">BT Hardening Tool · SPEC.md §5.4 · four states shown below</div>
+
+<div class="states">
+  <button data-s="clean">1 · clean</button>
+  <button data-s="review" aria-pressed="true">2 · review</button>
+  <button data-s="unknown">3 · unknown</button>
+  <button data-s="conflict">4 · conflict</button>
+</div>
+
+<div class="modal">
+  <div class="mhead">
+    <h2>Review pre-existing configuration</h2>
+    <div class="ident">fw1.do.{XX}.dcm.ex &nbsp;·&nbsp; Deployed Official &nbsp;·&nbsp; config 23.3 &nbsp;·&nbsp; sha256 4f2a…9c1b</div>
+    <div class="counts" id="counts"></div>
+  </div>
+
+  <div class="mbody" id="body"></div>
+
+  <div class="mfoot">
+    <span class="foothint" id="hint"></span>
+    <span class="spacer"></span>
+    <button class="btn">Cancel</button>
+    <button class="btn" id="acceptall">Accept all suggestions</button>
+    <button class="btn primary" id="cont">Continue</button>
+  </div>
+</div>
+
+<div class="annot">
+  <h3>Design notes</h3>
+  <ol>
+    <li><strong>Exact matches never appear.</strong> They are applied silently and reported only as a count. The modal is an exception queue, not a list of everything in the file. If the seed profile covers the whole baseline, state 1 is what the team sees — one line and a button.</li>
+    <li><strong>The plain-English line is the primary control surface.</strong> Under time pressure people classify from that sentence and nothing else. Raw fields stay collapsed. Budget real effort on this wording.</li>
+    <li><strong>Role and disposition are separate dropdowns.</strong> Role drives validators, disposition drives output. Folding them together makes "this is the scoring rule, but regenerate it" inexpressible.</li>
+    <li><strong>Structural matches state the delta in words</strong>, not as a diff. The Remote_Access row is the scenario that matters: Green Team rotates the VPN range between years, and a tool that presented it as "unknown rule" would invite someone to drop it and lock the team out.</li>
+    <li><strong>Lockout-critical requires typing the name.</strong> Not a checkbox — checkboxes get clicked reflexively.</li>
+    <li><strong>Referential integrity blocks, it does not warn.</strong> State 4 shows an alias marked drop while a kept rule still references it. Continue is disabled until resolved.</li>
+    <li><strong>Accept-all is available in state 2, absent in state 3.</strong> There is no safe bulk answer for items the tool has never seen.</li>
+  </ol>
+</div>
+
+</div>
+
+<script>
+const DATA = {
+  clean: {
+    counts:[['exact','13 exact']],
+    banner:{cls:'ok',html:'<strong>Nothing needs your attention.</strong> 11 rules and 2 aliases recognised from the DCM26 baseline and classified automatically.'},
+    rows:[], acceptall:false, cont:true,
+    hint:'Baseline matches the shipped profile exactly.'
+  },
+  review: {
+    counts:[['exact','11 exact'],['similar','2 similar']],
+    banner:null, acceptall:true, cont:true,
+    hint:'2 items pre-filled from the profile. Confirm or override.',
+    rows:[
+      {badge:'similar',name:'alias · Remote_Access',
+       plain:'Every VPN range that may reach this enclave, including your own Blue Team VPN. If you narrow or remove this you lose access to your own firewalls.',
+       delta:'Matches your <strong>Remote_Access</strong> alias except the Blue Team entry is now <code>198.19.{X}.0/24 → 198.19.{X+1}.0/24</code>. Green Team appears to have rotated the range. Same role?',
+       role:'remote_access', disp:'keep_verbatim', crit:true,
+       refs:'Referenced by 1 kept rule · "VPN access for exercise participants"',
+       raw:'type      network\nentries   172.21.31.0/24, fd81:172:21:31::/64,\n          198.18.128.0/24, fd81:198:18:128::/64,\n          198.19.{X+1}.0/24, fd81:198:19:{X+1}::/64,\n          172.21.28.0/24, 172.21.29.0/24 (+v6)\ndescr     Remote access from BT, GT, and WT VPN'},
+      {badge:'similar',name:'rule · wan · pass',
+       plain:'The edge routers may talk to this firewall — OSPF, OSPFv3 and BFD.',
+       delta:'Matches your <strong>routing</strong> rule, but the <code>Routers</code> alias IPv6 entries use <code>fd81:10:{X}::</code> while this firewall\'s FRR peers are <code>fd81:25:{X}::1</code> and <code>::2</code>. Known baseline defect <strong>F1</strong> — will raise <code>V-ROUTING-PEERS</code> at export.',
+       role:'routing', disp:'keep_verbatim', crit:false,
+       refs:'References alias "Routers"',
+       raw:'interface   wan\ntype        pass\nipprotocol  inet46\nsource      alias:Routers\ndest        (self)\ndescr       Routing information exchange'}
+    ]
+  },
+  unknown: {
+    counts:[['exact','11 exact'],['new','1 new']],
+    banner:null, acceptall:false, cont:false,
+    hint:'1 item is unclassified. Every item needs a role before you can continue.',
+    rows:[
+      {badge:'new',name:'rule · opt2 · pass',
+       plain:'Anything on the DMZ segment may reach 172.21.29.14 on TCP 8443. Not present in the DCM26 baseline.',
+       delta:null,
+       role:'unknown', disp:'keep_edit', crit:false,
+       refs:'No alias references',
+       raw:'interface   opt2  (role: dmz)\ntype        pass\nipprotocol  inet46\nprotocol    tcp\nsource      any\ndest        172.21.29.14 port 8443\ndescr       (empty)',
+       hintline:'172.21.29.0/24 is the Green Team Tools range. This may be a scoring or management path added after the baseline was captured — check before dropping it.'}
+    ]
+  },
+  conflict: {
+    counts:[['exact','10 exact'],['similar','1 similar'],['new','1 new']],
+    banner:{cls:'err',html:'<strong>Cannot continue — 1 referential conflict.</strong> An alias is marked for removal while a rule you are keeping still references it.'},
+    acceptall:false, cont:false,
+    hint:'Resolve the conflict to continue.',
+    rows:[
+      {badge:'exact',name:'alias · Routers',
+       plain:'The enclave\'s upstream edge routers, used by the routing rule.',
+       delta:null, role:'routing', disp:'drop', crit:false, bad:true,
+       refs:'Referenced by 1 kept rule',
+       err:'Conflict — rule "Routing information exchange" is set to Keep verbatim and references this alias. Either keep the alias, or change that rule\'s disposition.',
+       raw:'type      host\nentries   25.{X}.0.1, 25.{X}.0.2, 25.{X}.0.3,\n          fd81:10:{X}::1, ::2, ::3\ndescr     Blue Team edge routers r1 and r2'}
+    ]
+  }
+};
+
+const ROLES=[['remote_access','Remote access / VPN'],['routing','Routing / control plane'],
+  ['essential_services','Essential services'],['management','Management access'],
+  ['scoring','Scoring & YT usersims'],['permissive_default','Permissive default'],
+  ['enclave_policy','Enclave policy'],['unknown','— unknown —']];
+const DISPS=[['keep_verbatim','Keep verbatim'],['keep_edit','Keep and edit'],
+  ['replace_generated','Replace with generated'],['drop','Drop']];
+
+const sel=(opts,v,bad)=>`<select class="${bad?'bad':''}">`+
+  opts.map(([k,l])=>`<option value="${k}"${k===v?' selected':''}>${l}</option>`).join('')+`</select>`;
+
+function render(state){
+  const d=DATA[state];
+  counts.innerHTML=d.counts.map(([c,t])=>`<span class="pill ${c}">${t}</span>`).join('');
+  let h = d.banner?`<div class="banner ${d.banner.cls}">${d.banner.html}</div>`:'';
+  h += d.rows.map(r=>`
+    <div class="row">
+      <div class="rtop">
+        <span class="badge ${r.badge}">${r.badge}</span>
+        <div class="rmain">
+          <div class="rname">${r.name}</div>
+          <div class="plain">${r.plain}</div>
+          ${r.delta?`<div class="delta">${r.delta}</div>`:''}
+          ${r.hintline?`<div class="delta">${r.hintline}</div>`:''}
+          <div class="refs">${r.refs}</div>
+          <div class="controls">
+            <div><label class="f">Role</label>${sel(ROLES,r.role)}</div>
+            <div><label class="f">Disposition</label>${sel(DISPS,r.disp,r.bad)}</div>
+            ${r.crit?`<div class="crit"><span>&#9679;</span> lockout-critical — drop requires typing the name</div>`:''}
+          </div>
+          ${r.err?`<div class="rowerr">${r.err}</div>`:''}
+          <details class="raw"><summary>Raw fields</summary><pre>${r.raw}</pre></details>
+        </div>
+      </div>
+    </div>`).join('');
+  body.innerHTML=h;
+  hint.textContent=d.hint;
+  acceptall.style.display=d.acceptall?'':'none';
+  cont.disabled=!d.cont;
+  document.querySelectorAll('.states button').forEach(b=>
+    b.setAttribute('aria-pressed', b.dataset.s===state));
+}
+document.querySelectorAll('.states button').forEach(b=>
+  b.addEventListener('click',()=>render(b.dataset.s)));
+render('review');
+</script>
+</body>
+</html>

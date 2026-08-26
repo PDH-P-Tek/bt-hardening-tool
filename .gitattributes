@@ -1,0 +1,55 @@
+# =====================================================================
+#  BT Hardening Tool — .gitattributes
+#
+#  Development happens in WSL; a reference clone is read from Windows
+#  under OneDrive. Normalise everything to LF in the repository so the
+#  two never fight, and so nothing depends on a local core.autocrlf.
+# =====================================================================
+
+* text=auto eol=lf
+
+# --- Explicit text ----------------------------------------------------
+*.md            text eol=lf diff=markdown
+*.py            text eol=lf diff=python
+*.yaml          text eol=lf
+*.yml           text eol=lf
+*.toml          text eol=lf
+*.cfg           text eol=lf
+*.ini           text eol=lf
+*.json          text eol=lf
+*.xml           text eol=lf
+*.html          text eol=lf diff=html
+*.css           text eol=lf
+*.js            text eol=lf
+*.txt           text eol=lf
+*.sql           text eol=lf
+Dockerfile      text eol=lf
+Makefile        text eol=lf
+.gitignore      text eol=lf
+.gitattributes  text eol=lf
+
+# --- Scripts: LF is not cosmetic -------------------------------------
+# The collector wrapper is deployed to FreeBSD and Linux targets. A
+# CRLF shebang fails there with a "bad interpreter: No such file or
+# directory" error that points at the interpreter rather than at the
+# line ending, and costs an hour to diagnose. Never let these be CRLF.
+*.sh            text eol=lf
+*.bash          text eol=lf
+btmon-collect*  text eol=lf
+
+# --- Binary: never normalised, never diffed --------------------------
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.pdf   binary
+*.docx  binary
+*.xlsx  binary
+*.pptx  binary
+*.zip   binary
+*.gz    binary
+*.tar   binary
+*.woff  binary
+*.woff2 binary
+*.sqlite binary

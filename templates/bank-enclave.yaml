@@ -1,0 +1,93 @@
+# Enclave starter template — Host Nation National Bank (BANK)
+#
+# Derived from DCM26 Annex G HN BANK Rev C1.
+#
+# Included alongside do-enclave.yaml deliberately: side by side they show what
+# varies between enclaves, which is the reason nothing about the annex may be
+# hardcoded. Differences from DO are marked ***.
+
+template: bank
+source: "BT Technical Information Book Annex G — HN BANK, Rev C1"
+domain: "bank.{XX}.dcm.ex"
+firewall: "fw1.bank.{XX}.dcm.ex"
+estate_side: host_nation          # *** WAN on 10.{X}.80.0/24
+
+segments:
+  - { role: ws,   name: Workstations, v4: "10.{X}.17.0/24", v6: "fd81:10:{X}:17::/64", ifname: lan }
+  - { role: svrs, name: Servers,      v4: "10.{X}.18.0/24", v6: "fd81:10:{X}:18::/64", ifname: opt1 }
+  - { role: dmz,  name: DMZ,          v4: "10.{X}.21.0/24", v6: "fd81:10:{X}:21::/64", ifname: opt2 }
+
+wan: { v4: "10.{X}.80.6/24", v6: "fd81:10:{X}:80::6/64", ifname: wan }
+
+hosts:
+  - { name: dc01,     v4: "10.{X}.18.11",  v6: "fd81:10:{X}:18::11",  segment: svrs, role: domain_controller }
+  - { name: dc02,     v4: "10.{X}.18.12",  v6: "fd81:10:{X}:18::12",  segment: svrs, role: domain_controller }
+  - { name: mail,     v4: "10.{X}.18.25",  v6: "fd81:10:{X}:18::25",  segment: svrs, role: mail_server }
+  - { name: fs,       v4: "10.{X}.18.139", v6: "fd81:10:{X}:18::139", segment: svrs, role: file_server }
+  - { name: database, v4: "10.{X}.18.14",  v6: "fd81:10:{X}:18::14",  segment: svrs, role: database,
+      note: "*** Finance DB (MySQL). ISA checks only HOST and SSH — but the web tier needs 3306." }
+  - { name: proxy,    v4: "10.{X}.21.53",  v6: "fd81:10:{X}:21::53",  segment: dmz,  role: proxy,
+      note: "*** Also the enclave DNS destination — see connectivity below." }
+  - { name: www,      v4: "10.{X}.21.80",  v6: "fd81:10:{X}:21::80",  segment: dmz,  role: web_server,
+      note: "*** Apache + MySQL. ISA additionally checks MARIADB on this host." }
+
+  - { name_range: "ws101-ws104", v4_base: "10.{X}.17.10",  segment: ws, role: workstation, os: "Windows 11 23H2" }
+  - { name_range: "ws201-ws204", v4_base: "10.{X}.17.40",  segment: ws, role: workstation, os: "Windows 10 22H2" }
+  - { name_range: "ws301-ws304", v4_base: "10.{X}.17.200", segment: ws, role: workstation, os: "Ubuntu Desktop 24" }
+
+# *** No EXCON hosts are listed in Annex G §2.5. That is NOT the same as their
+# absence from the network — the scoring source is external, in GOV.
+
+scoring:
+  source: "GOV scoring bot"
+  observed: "10.{X}.1.254"
+  central_monitor: "10.181.2.214"
+  annex_text: >-
+    "Scoringbot in Host Nation Government (GOV) must be able to communicate with
+    all DNMP systems for availability scoring purposes."
+  note: >-
+    *** Arrives OVER THE HN WAN, unlike deployed enclaves where the bot sits
+    inside the workstation segment. "DNMP" is unexplained in the annex — see
+    OPEN-QUESTIONS.md Q9.
+
+connectivity:
+
+  within:
+    - { id: ws-svrs-open, text: "Communication must be open between workstation and server networks." }
+    - { id: ws-proxy,     text: "Workstations should be able to access websites hosted in Bank Proxy.",
+        generates: "ws -> proxy tcp 80, 443" }
+
+  inbound:
+    - { id: dmz-public, text: "All services in the BANK DMZ must be accessible from outside networks including Greynet.",
+        note: "*** Broader than DO — 'all services', not just the public-facing ones." }
+    - { id: dns-to-proxy, text: "DNS queries to the DMZ proxy (required for correct cyber range operation).",
+        generates: "-> proxy tcp/udp 53",
+        note: "*** DO sends DNS to the domain controllers. This is the clearest example of why the DNS destination cannot be hardcoded." }
+    - { id: scoringbot-gov, text: "Scoringbot in Host Nation Government (GOV) must be able to communicate with all DNMP systems." }
+    - { id: yt-rdp-ssh, text: "Yellow Team User simulators must be able to remotely access workstations (i.e. RDP / SSH) via their range VPN." }
+    - { id: owa, text: "Outlook Web Access (OWA) must be enabled on the mail server. Workstations should be able to send/receive email from external mail." }
+
+  outbound:
+    - { id: egress-greynet, text: "Workstations, Servers, and DMZ must be able to communicate to greynet." }
+    - { id: egress-dns,     text: "DNS queries to the range core DNS resolvers in greynet." }
+    - { id: hndc-blockchain, text: "Workstations must have connectivity to remotely manage the Bank Blockchain server (SSH/RDP) in Host Nation Data Centre, as well as access the website served.",
+        cross_enclave: hndc,
+        note: "*** Generates an egress rule here AND an ingress rule on the HNDC firewall. Raises V-CROSS-ENCLAVE-ORPHAN if the pair is broken." }
+    - { id: hndc-cctv, text: "Workstations must have remote connectivity to the CCTV and Access Control hosted in the Host Nation Data Centre.",
+        cross_enclave: hndc }
+
+suggested_aliases:
+  BANK_DC:         { type: host, entries: ["10.{X}.18.11", "10.{X}.18.12", "fd81:10:{X}:18::11", "fd81:10:{X}:18::12"] }
+  BANK_MAIL:       { type: host, entries: ["10.{X}.18.25", "fd81:10:{X}:18::25"] }
+  BANK_DB:         { type: host, entries: ["10.{X}.18.14", "fd81:10:{X}:18::14"] }
+  BANK_DMZ_WWW:    { type: host, entries: ["10.{X}.21.80", "fd81:10:{X}:21::80"] }
+  BANK_DMZ_PROXY:  { type: host, entries: ["10.{X}.21.53", "fd81:10:{X}:21::53"] }
+  Scoring_Sources: { type: host, entries: ["10.{X}.1.254", "10.181.2.214"] }
+  Mgmt_Sources:    { type: network, entries: [{ alias: Remote_Access }, { segment: ws }], lockout_critical: true }
+  FW_Management:   { type: port, entries: [22, 443] }
+  BLOCKED_IPs:     { type: host, entries: [] }
+
+notes:
+  - "*** Default admin password is SilentMarbleTiger903# (§1.3), not Admin1Admin1. Credentials are per-enclave."
+  - "*** HN uses a different VLM-Up portal: vlm-up-evs.crp.cr14.net, not vlm-up.crp.cr14.net."
+  - "The DCM26 end-state bank config was the best work in the estate — network aliases, per-service port aliases, WAN catch-all disabled. All 31 crafted rules were IPv4-only above inet46 catch-alls, so none of it applied to IPv6. See EVIDENCE.md E2."
