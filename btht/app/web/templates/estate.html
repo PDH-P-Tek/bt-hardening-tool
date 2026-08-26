@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block nav %} / <strong>{{ slug }}</strong>{% endblock %}
+{% block body %}
+<h1>{{ slug }}</h1>
+<p class="sub">team {{ estate.team }}{% if estate.team_padded %} ({{ estate.team_padded }} in names){% endif %}
+ · {{ estate.firewalls|length }} firewall(s) · {{ estate.all_nodes()|length }} managed device(s)</p>
+
+<div class="panel">
+<h2>Vocabulary</h2>
+<p class="sub">The role tokens this estate uses. Nothing outside this list is guessed —
+an interface the tool cannot place is shown to you instead.</p>
+{% for role in estate.role_vocabulary %}<span class="tag">{{ role }}</span> {% endfor %}
+{% if not estate.role_vocabulary %}<span class="tag warn">none declared</span>{% endif %}
+</div>
+
+{% for firewall in estate.firewalls %}
+<div class="panel">
+<h2>{{ firewall.enclave }}</h2>
+<p class="sub">
+  {{ firewall.fqdn or "no FQDN" }} ·
+  {{ firewall.node.platform.value }} at <code>{{ firewall.node.mgmt_address }}</code>
+  {% if firewall.side %} · side <strong>{{ firewall.side }}</strong>{% endif %}
+  {% if firewall.config_version %} · config {{ firewall.config_version }}{% endif %}
+</p>
+
+{% if firewall.interfaces %}
+<table>
+  <tr><th>ifname</th><th>role</th><th>address</th><th>description</th><th></th></tr>
+  {% for i in firewall.interfaces %}
+  <tr>
+    <td><code>{{ i.ifname }}</code></td>
+    <td>{% if i.role.startswith("other:") %}<span class="tag warn">{{ i.role }}</span>
+        {% else %}<span class="tag">{{ i.role }}</span>{% endif %}</td>
+    <td><code>{{ i.v4 or "" }}{% if i.v6 %}<br>{{ i.v6 }}{% endif %}</code></td>
+    <td>{{ i.descr }}</td>
+    <td>{% if i.is_lan %}<span class="tag warn">anti-lockout binds here</span>{% endif %}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% else %}
+<div class="note warn">No interfaces declared. Type them in below, or import a
+configuration to fill them in for confirmation.</div>
+{% endif %}
+
+<div class="row">
+<div>
+<h2>Add an interface</h2>
+<form method="post" action="/estates/{{ slug }}/enclaves/{{ firewall.enclave }}/interfaces">
+  <div class="row">
+    <div><label>ifname</label><input name="ifname" placeholder="opt1" required></div>
+    <div><label>role</label><input name="role" placeholder="servers" required></div>
+  </div>
+  <div class="row">
+    <div><label>IPv4 with prefix</label><input name="v4" placeholder="192.0.2.1/24"></div>
+    <div><label>IPv6 with prefix</label><input name="v6" placeholder="2001:db8::1/64"></div>
+  </div>
+  <label>description</label><input name="descr" placeholder="site_servers">
+  <button type="submit">Add</button>
+</form>
+</div>
+<div>
+<h2>Import a configuration</h2>
+<p class="sub">An accelerator, never a shortcut past you: interfaces are filled in from
+the file and shown above for confirmation. Only <code>&lt;aliases&gt;</code>,
+<code>&lt;filter&gt;</code> and <code>&lt;nat&gt;</code> are read, plus a short fact list.
+Nothing else is retained.</p>
+<form method="post" action="/estates/{{ slug }}/enclaves/{{ firewall.enclave }}/import"
+      enctype="multipart/form-data">
+  <label>pfSense configuration or section export</label>
+  <input type="file" name="config" accept=".xml" required>
+  <button type="submit">Import and show me</button>
+</form>
+</div>
+</div>
+</div>
+{% endfor %}
+
+<div class="panel">
+<h2>Add an enclave</h2>
+<p class="sub">Its name is yours. The tool has no list of valid enclaves.</p>
+<form method="post" action="/estates/{{ slug }}/enclaves">
+  <div class="row">
+    <div><label>enclave name</label><input name="name" placeholder="alpha" required></div>
+    <div><label>firewall FQDN</label><input name="fqdn" placeholder="fw1.alpha.example"></div>
+  </div>
+  <div class="row">
+    <div><label>platform</label>
+      <select name="platform">
+        {% for p in platforms %}<option value="{{ p }}">{{ p }}</option>{% endfor %}
+      </select></div>
+    <div><label>management address</label><input name="mgmt_address" placeholder="10.0.0.1" required></div>
+    <div><label>credential name (never the credential)</label>
+      <input name="credential_ref" placeholder="monitor-key"></div>
+  </div>
+  <button type="submit">Add</button>
+</form>
+</div>
+{% endblock %}

@@ -7,7 +7,7 @@ on something outside the code.
 **This does not replace those lists.** Every step cites its source, and the source
 stays authoritative on *what* the step must do. This file is authoritative on *when*.
 
-Status: **Phases 0 and 1 complete.** Phase 2 next — estate setup, topology view, then policy capture.
+Status: **Phases 0 and 1 complete. Phase 2 in progress** — 2.1 done, 2.2 (topology view) next.
 
 ---
 
@@ -70,7 +70,7 @@ setup it resolves nothing and says so, which is the behaviour, not a gap.
 
 | # | Step | Source | Done when |
 |---|---|---|---|
-| 2.1 | **Estate setup.** Declare the estate: enclaves and their names, each device and its platform, management addresses, interfaces and what each segment is for, what the hosts run. Establishes the role vocabulary | §4, §5.1 | An estate exists that the operator named end to end. **This is the same inventory 5.1 polls** — captured once |
+| 2.1 | ✅ **Estate setup.** Declare the estate: enclaves and their names, each device and its platform, management addresses, interfaces and what each segment is for, what the hosts run. Establishes the role vocabulary | §4, §5.1 | An estate exists that the operator named end to end. **This is the same inventory 5.1 polls** — captured once |
 | 2.2 | **Topology view.** The declared estate drawn as inline SVG — enclaves, routers, firewalls, segments. Click a node for its detail. Deterministic tiered layout, no library | §4 | Same estate renders the same picture; a setup error is visible in it. **5.4 reuses it** with live status |
 | 2.3 | Estate policy schema and loader — the durable artefact | §4, §9 | Round-trips YAML; human-editable and diffable |
 | 2.4 | Wizard, interface by interface, **typed input only** | §5.1 | Every step completable without pasting anything |

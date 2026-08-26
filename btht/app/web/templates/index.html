@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block body %}
+<h1>Estates</h1>
+<p class="sub">Day one: declare the estate. Everything the tool does afterwards reads this.</p>
+
+{% if estates %}
+<div class="panel">
+<table>
+  <tr><th>estate</th><th>team</th><th>enclaves</th><th>devices</th></tr>
+  {% for e in estates %}
+  <tr>
+    <td><a href="/estates/{{ e.slug }}">{{ e.slug }}</a></td>
+    <td>{{ e.team }}</td>
+    <td>{{ e.enclaves }}</td>
+    <td>{{ e.nodes }}</td>
+  </tr>
+  {% endfor %}
+</table>
+</div>
+{% else %}
+<div class="note warn">No estate declared yet. The tool ships no vocabulary and assumes no
+structure — everything below is yours to name.</div>
+{% endif %}
+
+<div class="panel">
+<h2>New estate</h2>
+<form method="post" action="/estates">
+  <div class="row">
+    <div><label>name</label><input name="slug" placeholder="team07" required></div>
+    <div><label>team number</label><input name="team" type="number" min="0" value="0" required></div>
+    <div><label>team number as written in names</label><input name="team_padded" placeholder="07"></div>
+  </div>
+  <label>interface role tokens, comma separated — the segments your estate has</label>
+  <input name="vocabulary" placeholder="wan, users, servers, dmz">
+  <label>prefixes to strip from interface descriptions, if your naming has any</label>
+  <input name="tokens" placeholder="site_, hq_">
+  <button type="submit">Create</button>
+</form>
+</div>
+{% endblock %}
