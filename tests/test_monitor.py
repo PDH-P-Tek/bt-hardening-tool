@@ -344,13 +344,18 @@ def test_an_unpolled_device_is_not_painted_healthy() -> None:
         team_padded="1",
         firewalls=(Firewall(enclave="alpha", fqdn="fw1", node=node),),
     )
-    unpolled = {s.detail_id: s for s in layout(estate).shapes}
-    assert unpolled["fw:alpha"].accent == "accent"
-    assert "unreachable" not in unpolled["fw:alpha"].sublabel
+    from btht.app.web.topology import View
 
-    down = {s.detail_id: s for s in layout(estate, {"fw1": "unreachable — timed out"}).shapes}
-    assert down["fw:alpha"].accent == "warn"
-    assert "unreachable" in down["fw:alpha"].sublabel
+    unpolled = {s.detail_id: s for s in layout(estate, View()).shapes}
+    assert unpolled["alpha"].accent == "accent"
+    assert "unreachable" not in unpolled["alpha"].sublabel
+
+    down = {
+        s.detail_id: s
+        for s in layout(estate, View(), status={"fw1": "unreachable — timed out"}).shapes
+    }
+    assert down["alpha"].accent == "warn"
+    assert "unreachable" in down["alpha"].sublabel
 
 
 def test_the_monitor_view_reuses_the_topology_rather_than_duplicating_it() -> None:

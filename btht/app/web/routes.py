@@ -65,7 +65,7 @@ from btht.app.model.services import (
     load_catalogue as load_services,
 )
 from btht.app.validate.rules import Context, Severity, run_all
-from btht.app.web.topology import details_json, layout, render_svg
+from btht.app.web.topology import View, layout, render_svg
 
 TEMPLATES = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 router = APIRouter()
@@ -267,19 +267,40 @@ async def import_config(
 
 @router.get("/estates/{slug}/topology", response_class=HTMLResponse)
 def show_topology(request: Request, slug: str) -> HTMLResponse:
-    """The declared estate, drawn. Read-only by design — see `topology.py`."""
+    """The declared estate, drawn. Read-only by design — see `topology.py`.
+
+    What is open and what is filtered come from the query string, so the picture is a
+    pure function of them and any particular view is a link.
+    """
     path = estate_path(slug)
     if not path.exists():
         return render(
             request, "index.html", estates=[], messages=[("err", f"no estate called {slug}")]
         )
-    diagram = layout(load_estate(path))
+    estate = load_estate(path)
+    catalogue = load_services(SERVICE_CATALOGUE)
+    params = request.query_params
+    view = View(
+        open_ids=frozenset(params.getlist("open")),
+        focus_id=params.get("focus", ""),
+        host_type=params.get("host_type", ""),
+        service=params.get("service", ""),
+        only_scored=params.get("scored") == "1",
+        only_out_of_bounds=params.get("oob") == "1",
+    )
+    diagram = layout(estate, view, slug=path.stem, catalogue=catalogue)
     return render(
         request,
         "topology.html",
         slug=path.stem,
+        estate=estate,
+        view=view,
+        diagram=diagram,
         svg=render_svg(diagram),
-        details=details_json(diagram),
+        open_ids=sorted(view.open_ids),
+        host_types=sorted(catalogue.host_types),
+        services=sorted(catalogue.services),
+        open_all_links={f.enclave: view.open_all_link(f, path.stem) for f in estate.firewalls},
     )
 
 
@@ -607,7 +628,7 @@ def export(slug: str, enclave: str) -> Any:
 
 @router.get("/estates/{slug}/monitor", response_class=HTMLResponse)
 def monitor_dashboard(request: Request, slug: str) -> HTMLResponse:
-    """The topology with live status on it — `BUILD-PLAN.md` 5.4.
+    """The topology with status painted on it — `BUILD-PLAN.md` 5.4.
 
     Not a second dashboard. The operator already reads this picture, and a host that
     stops answering should change on the picture they are already looking at.
@@ -616,6 +637,7 @@ def monitor_dashboard(request: Request, slug: str) -> HTMLResponse:
 
     path = estate_path(slug)
     estate = load_estate(path)
+    catalogue = load_services(SERVICE_CATALOGUE)
     database = ESTATES / f"{path.stem}-monitor.sqlite"
 
     status: dict[str, str] = {}
@@ -639,13 +661,21 @@ def monitor_dashboard(request: Request, slug: str) -> HTMLResponse:
         finally:
             store.close()
 
-    diagram = layout(estate, status)
+    params = request.query_params
+    view = View(open_ids=frozenset(params.getlist("open")), focus_id=params.get("focus", ""))
+    diagram = layout(estate, view, slug=path.stem, catalogue=catalogue, status=status)
     return render(
         request,
         "monitor.html",
         slug=path.stem,
+        estate=estate,
+        view=view,
+        diagram=diagram,
         svg=render_svg(diagram),
-        details=details_json(diagram),
+        open_ids=sorted(view.open_ids),
+        host_types=sorted(catalogue.host_types),
+        services=sorted(catalogue.services),
+        open_all_links={f.enclave: view.open_all_link(f, path.stem) for f in estate.firewalls},
         polled=bool(status),
         worklist=worklist,
     )

@@ -228,9 +228,7 @@ def test_an_interface_with_hosts_on_it_is_refused_and_says_why(
         data={"hostname": "dc01", "segment_role": "svrs", "v4": "192.0.2.5"},
         follow_redirects=False,
     )
-    response = client.post(
-        f"/estates/{slug}/delete/interface/alpha/opt1", follow_redirects=False
-    )
+    response = client.post(f"/estates/{slug}/delete/interface/alpha/opt1", follow_redirects=False)
     assert response.status_code == 303
     assert "dc01" in response.headers["location"], "the refusal names what is in the way"
 
