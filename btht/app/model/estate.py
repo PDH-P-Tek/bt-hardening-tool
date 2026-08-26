@@ -94,11 +94,25 @@ class Interface:
 @dataclass(frozen=True, slots=True)
 class Host:
     hostname: str
+    os: str = ""
+    """What it runs, as the operator would say it — `Windows 10 22H2`, `Ubuntu 24.04`.
+
+    Free text on purpose. It drives nothing automatically; it is there because the
+    person deciding whether RDP or SSH belongs on a box needs to know which it is."""
+
+    services: tuple[str, ...] = ()
+    """Named services from the catalogue. What this host actually runs, which is not
+    the same question as what is *scored* on it."""
+
     v4: IPv4Address | None = None
     v6: IPv6Address | None = None
     segment_role: str = ""
     service_role: str = ""
-    """From `service-catalogue.yaml` hostname patterns."""
+    """The host type. From `service-catalogue.yaml` hostname patterns as a suggestion,
+    confirmed by the operator."""
+
+    group: str = ""
+    """The host group this was expanded from, if any. Empty for a host declared alone."""
 
     isa_checks: tuple[str, ...] = ()
     """From `isa-checks.yaml`. Drives SCORING rules and the verification manifest."""
@@ -132,12 +146,31 @@ class Firewall:
 
     interfaces: tuple[Interface, ...] = ()
     hosts: tuple[Host, ...] = ()
+    host_groups: tuple[HostGroup, ...] = ()
+    """Declared groups. `all_hosts()` is what everything else should read."""
+
     aliases: tuple[Alias, ...] = ()
     rules: tuple[Rule, ...] = ()
     nat: NatConfig = field(default_factory=NatConfig)
     baseline_sha256: str = ""
     """Binds generated output to one firewall identity. A mismatched import is
     refused, not warned — `SPEC.md` §7.4."""
+
+    def all_hosts(self, catalogue: object = None) -> tuple[Host, ...]:
+        """Individually declared hosts plus every host expanded from a group.
+
+        Everything downstream reads this rather than `hosts`, so a machine declared in
+        a group of ten is as real as one typed in alone.
+        """
+        expanded: list[Host] = list(self.hosts)
+        for group in self.host_groups:
+            services: tuple[str, ...] = ()
+            if catalogue is not None and group.host_type:
+                host_type = getattr(catalogue, "host_types", {}).get(group.host_type)
+                if host_type is not None:
+                    services = tuple(host_type.services)
+            expanded.extend(group.expand(services))
+        return tuple(expanded)
 
     def interface_by_role(self, role: str) -> Interface | None:
         for iface in self.interfaces:
@@ -203,3 +236,79 @@ class Estate:
         for node in self.nodes:
             seen.setdefault(node.name, node)
         return tuple(seen.values())
+
+
+@dataclass(frozen=True, slots=True)
+class HostGroup:
+    """Many machines of one kind, declared once.
+
+    An estate is a few kinds of machine repeated: ten Windows 10 workstations, five
+    Ubuntu desktops, two domain controllers. Declaring each by hand is tedious, and
+    tedium is how a host gets missed — and a host nobody declared is a host whose
+    ports nobody opened.
+
+    Expansion is deliberate and visible rather than implicit: the group produces real
+    hosts that appear individually everywhere else in the tool, so a rule, a scoring
+    assertion or a topology node always refers to one machine.
+    """
+
+    name_prefix: str
+    """`ws1` gives `ws101`, `ws102`… when `first_index` is 01. Written as the operator
+    writes it on the diagram."""
+
+    count: int = 1
+    first_index: int = 1
+    index_width: int = 2
+    segment_role: str = ""
+    host_type: str = ""
+    os: str = ""
+    v4_start: IPv4Address | None = None
+    v6_start: IPv6Address | None = None
+    services: tuple[str, ...] = ()
+    """Overrides the host type's services when set. Empty means use the type's."""
+
+    out_of_bounds: bool = False
+    note: str = ""
+
+    def __post_init__(self) -> None:
+        if self.count < 1:
+            raise ValueError(f"{self.name_prefix}: a group of {self.count} hosts is not a group")
+        if self.count > 512:
+            raise ValueError(
+                f"{self.name_prefix}: {self.count} hosts in one group. That is almost "
+                "certainly a typo in the count or the address range."
+            )
+
+    def names(self) -> tuple[str, ...]:
+        return tuple(
+            f"{self.name_prefix}{str(self.first_index + n).zfill(self.index_width)}"
+            for n in range(self.count)
+        )
+
+    def expand(self, catalogue_services: tuple[str, ...] = ()) -> tuple[Host, ...]:
+        """The individual machines. Addresses run consecutively from the start address.
+
+        A group with no start address still expands — the hosts exist and are visible,
+        they simply have nothing to address yet, which is a state the operator can see
+        and fix rather than one that silently drops them.
+        """
+        services = self.services or catalogue_services
+        hosts = []
+        for offset, name in enumerate(self.names()):
+            v4 = self.v4_start + offset if self.v4_start is not None else None
+            v6 = self.v6_start + offset if self.v6_start is not None else None
+            hosts.append(
+                Host(
+                    hostname=name,
+                    os=self.os,
+                    services=services,
+                    v4=v4,
+                    v6=v6,
+                    segment_role=self.segment_role,
+                    service_role=self.host_type,
+                    group=self.name_prefix,
+                    out_of_bounds=self.out_of_bounds,
+                    source_of_truth=SourceOfTruth.WIZARD,
+                )
+            )
+        return tuple(hosts)

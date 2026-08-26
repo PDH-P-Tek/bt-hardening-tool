@@ -1,201 +1,534 @@
-# BT Hardening Tool — service catalogue
-#
-# Derived from DCM26 range material.
-#
-# Role-keyed port sets, offered as suggestions in the wizard. The operator
-# confirms rather than types.
-#
-# READ isa-checks.yaml FIRST. ISA tells you what is SCORED — that is authoritative
-# and non-negotiable. This file covers what a service NEEDS to function, which is
-# usually a superset. A DC scored on eleven checks still needs the RPC dynamic
-# range for replication, and ISA does not check that.
-#
-# confidence:
-#   standard   — well-known, safe to apply
-#   assumed    — plausible default, verify before relying on it
-#   unverified — genuinely unknown. Emits an UNVERIFIED rule and raises
-#                V-UNVERIFIED-SERVICE on every export until closed.
-
 version: 1
-
-# ---------------------------------------------------------------------------
-# Hostname patterns -> role. Drives auto-suggestion during the wizard.
-# ---------------------------------------------------------------------------
-
 hostname_patterns:
-  - { match: "dc-?\\d+",        role: domain_controller }
-  - { match: "mail",            role: mail_server }
-  - { match: "fs",              role: file_server }
-  - { match: "ws\\d+",          role: workstation }
-  - { match: "www",             role: web_server }
-  - { match: "proxy",           role: proxy }
-  - { match: "ftp",             role: ftp_server }
-  - { match: "database|db",     role: database }
-  - { match: "nextcloud",       role: nextcloud }
-  - { match: "npc-server.*",    role: npc_server }
-  - { match: "scoringbot",      role: scoring_bot }
-  - { match: "historian",       role: historian }
-  - { match: "hmi",             role: hmi }
-  - { match: "plc.*|.*-plc\\d*", role: plc }
-  - { match: "rtu",             role: rtu }
-  - { match: "r\\d+",           role: router }
-  - { match: "fw\\d+",          role: firewall }
-
-# ---------------------------------------------------------------------------
-# Services
-# ---------------------------------------------------------------------------
-
+- match: dc-?\d+
+  role: domain_controller
+- match: mail
+  role: mail_server
+- match: fs
+  role: file_server
+- match: ws\d+
+  role: windows_workstation
+- match: www
+  role: web_server
+- match: proxy
+  role: proxy
+- match: ftp
+  role: ftp_server
+- match: database|db
+  role: database
+- match: nextcloud
+  role: nextcloud
+- match: npc-server.*
+  role: npc_server
+- match: scoringbot
+  role: scoring_bot
+- match: historian
+  role: historian
+- match: hmi
+  role: hmi
+- match: plc.*|.*-plc\d*
+  role: plc
+- match: rtu
+  role: plc
+- match: r\d+
+  role: router
+- match: fw\d+
+  role: firewall
 services:
-
   domain_controller:
     confidence: standard
-    tcp: [53, 88, 135, 389, 445, 464, 636, 3268, 3269, 9389]
-    udp: [53, 88, 123, 389, 464]
-    tcp_dynamic: "49152-65535"
-    critical_note: >-
-      The RPC dynamic range is the trap. Authentication succeeds without it and
-      replication, GPO and half the management tooling silently do not. ISA does
-      not check for it, so nothing tells you it is broken until the domain drifts.
-      Restrict it by source (DC-to-DC and admin hosts) rather than omitting it.
-
+    tcp:
+    - 53
+    - 88
+    - 135
+    - 389
+    - 445
+    - 464
+    - 636
+    - 3268
+    - 3269
+    - 9389
+    udp:
+    - 53
+    - 88
+    - 123
+    - 389
+    - 464
+    tcp_dynamic: 49152-65535
+    critical_note: The RPC dynamic range is the trap. Authentication succeeds without it and replication,
+      GPO and half the management tooling silently do not. ISA does not check for it, so nothing tells
+      you it is broken until the domain drifts. Restrict it by source (DC-to-DC and admin hosts) rather
+      than omitting it.
   mail_server:
     confidence: standard
-    tcp: [25, 80, 443, 587, 143, 993, 110, 995]
-    note: "OWA is 443, required by annex §2.6 in every enclave seen. 25 is scored."
-
+    tcp:
+    - 25
+    - 80
+    - 443
+    - 587
+    - 143
+    - 993
+    - 110
+    - 995
+    note: OWA is 443, required by annex §2.6 in every enclave seen. 25 is scored.
   file_server:
     confidence: standard
-    tcp: [445, 139, 3389]
-    udp: [137, 138]
-
+    tcp:
+    - 445
+    - 139
+    - 3389
+    udp:
+    - 137
+    - 138
   workstation:
     confidence: standard
-    tcp: [3389, 22]
-    note: "Windows hosts scored on RDP, Linux on SSH. YT usersims need these — annex §2.6."
-
+    tcp:
+    - 3389
+    - 22
+    note: Windows hosts scored on RDP, Linux on SSH. YT usersims need these — annex §2.6.
   web_server:
     confidence: standard
-    tcp: [80, 443, 22]
-    note: "www.bank is Apache + MySQL per Annex G §2.4; ISA additionally checks MARIADB on the web host."
-
+    tcp:
+    - 80
+    - 443
+    - 22
+    note: www.bank is Apache + MySQL per Annex G §2.4; ISA additionally checks MARIADB on the web host.
   proxy:
     confidence: assumed
-    tcp: [3128, 8080, 80, 443, 22]
-    note: >-
-      Squid defaults to 3128; 8080 is equally common. DCM26 DO forwarded 3128.
-      BANK §2.6 additionally requires DNS queries TO the DMZ proxy — so a proxy
-      may also need 53. Enclave-specific: DO sends DNS to the DCs instead.
-
+    tcp:
+    - 3128
+    - 8080
+    - 80
+    - 443
+    - 22
+    note: 'Squid defaults to 3128; 8080 is equally common. DCM26 DO forwarded 3128. BANK §2.6 additionally
+      requires DNS queries TO the DMZ proxy — so a proxy may also need 53. Enclave-specific: DO sends
+      DNS to the DCs instead.'
   ftp_server:
     confidence: assumed
-    tcp: [21]
-    tcp_passive: "UNKNOWN — must be confirmed"
-    critical_note: >-
-      pfSense has no FTP helper. Passive FTP needs the data port range opened
-      explicitly as well as 21. DCM26 DO believed a port forward on 21 made FTP
-      work; it did not — a wide-open WAN catch-all did (EVIDENCE.md E5). Confirm
-      whether the server is configured for passive mode and what range it uses.
-
+    tcp:
+    - 21
+    tcp_passive: UNKNOWN — must be confirmed
+    critical_note: pfSense has no FTP helper. Passive FTP needs the data port range opened explicitly
+      as well as 21. DCM26 DO believed a port forward on 21 made FTP work; it did not — a wide-open WAN
+      catch-all did (EVIDENCE.md E5). Confirm whether the server is configured for passive mode and what
+      range it uses.
   database:
     confidence: standard
-    tcp: [3306, 22]
-    note: "MySQL/MariaDB. ISA checks only HOST and SSH on database.bank — do not infer that 3306 is unneeded, the web tier uses it."
-
+    tcp:
+    - 3306
+    - 22
+    note: MySQL/MariaDB. ISA checks only HOST and SSH on database.bank — do not infer that 3306 is unneeded,
+      the web tier uses it.
   nextcloud:
     confidence: standard
-    tcp: [80, 443, 22]
-
+    tcp:
+    - 80
+    - 443
+    - 22
   npc_server:
     confidence: unverified
     tcp: []
-    critical_note: >-
-      EXCON, Out of Bounds, and its outbound path is a scored obligation
-      ('Agents Status' check). Annex A DO §2.2: 'communications must be
-      maintained through your firewall to external networks to avoid affecting
-      your score.' Permit egress; do not attempt to enumerate its ports.
-
+    critical_note: 'EXCON, Out of Bounds, and its outbound path is a scored obligation (''Agents Status''
+      check). Annex A DO §2.2: ''communications must be maintained through your firewall to external networks
+      to avoid affecting your score.'' Permit egress; do not attempt to enumerate its ports.'
   scoring_bot:
     confidence: n/a
-    critical_note: >-
-      A SOURCE, not a service. See isa-checks.yaml scoring_sources. Out of Bounds.
-
+    critical_note: A SOURCE, not a service. See isa-checks.yaml scoring_sources. Out of Bounds.
   historian:
     confidence: standard
-    tcp: [22, 80, 3306]
-
+    tcp:
+    - 22
+    - 80
+    - 3306
   hmi:
     confidence: standard
-    tcp: [22, 80]
-
+    tcp:
+    - 22
+    - 80
   plc:
     confidence: standard
-    tcp: [22, 502]
-    note: "502 is Modbus TCP. ISA checks only HOST and SSH, but Modbus is what the process actually needs."
-
+    tcp:
+    - 22
+    - 502
+    note: 502 is Modbus TCP. ISA checks only HOST and SSH, but Modbus is what the process actually needs.
   rtu:
     confidence: unverified
-    tcp: [22, 443]
-
+    tcp:
+    - 22
+    - 443
   router:
     confidence: standard
-    tcp: [22]
-    note: "Plus OSPF (proto 89), OSPFv3 and BFD (UDP 3784/3785) to the firewall — covered by the preserved Routers rule."
-
+    tcp:
+    - 22
+    note: Plus OSPF (proto 89), OSPFv3 and BFD (UDP 3784/3785) to the firewall — covered by the preserved
+      Routers rule.
   firewall:
     confidence: standard
-    tcp: [22, 443]
-    critical_note: >-
-      Scored target. HOST, SSH, HTTPS and Graynet Access. The scoring bot must
-      reach 22 and 443, and the firewall must retain egress.
-
-  # --- Blue Team tooling ---
-
-  elastic_fleet:      { confidence: standard, tcp: [8220] }
-  elasticsearch:      { confidence: standard, tcp: [9200, 9300], note: "9300 is inter-node, SOC-internal only." }
-  logstash:           { confidence: standard, tcp: [5044] }
-  kibana:             { confidence: standard, tcp: [5601] }
-
-  # --- Known unknowns from Annex A DO ---
-
+    tcp:
+    - 22
+    - 443
+    critical_note: Scored target. HOST, SSH, HTTPS and Graynet Access. The scoring bot must reach 22 and
+      443, and the firewall must retain egress.
+  elastic_fleet:
+    confidence: standard
+    tcp:
+    - 8220
+  elasticsearch:
+    confidence: standard
+    tcp:
+    - 9200
+    - 9300
+    note: 9300 is inter-node, SOC-internal only.
+  logstash:
+    confidence: standard
+    tcp:
+    - 5044
+  kibana:
+    confidence: standard
+    tcp:
+    - 5601
   apj:
     confidence: unverified
     tcp: []
-    note: "'Application server for Human Resources', Ubuntu 24.04. No ISA check observed. Ports unknown — likely 80/443/8080 if web-based."
-
+    note: '''Application server for Human Resources'', Ubuntu 24.04. No ISA check observed. Ports unknown
+      — likely 80/443/8080 if web-based.'
   modgpt:
     confidence: unverified
     tcp: []
-    note: "'Module server for handling GPT-based applications', Ubuntu 24.04. Ports unknown."
-
-# ---------------------------------------------------------------------------
-# Port aliases to ship
-# ---------------------------------------------------------------------------
-# These mirror what DCM26 teams built independently — reuse their shapes, the
-# naming was sound.
-
+    note: '''Module server for handling GPT-based applications'', Ubuntu 24.04. Ports unknown.'
 port_aliases:
-  FW_Management:       { ports: [22, 443],            descr: "Firewall administration" }
-  WEB_PORTS:           { ports: [80, 443] }
-  PORT_RDP_SSH:        { ports: [3389, 22] }
-  PORT_DNS:            { ports: [53] }
-  Kerberos:            { ports: [88, 464] }
-  LDAP:                { ports: [389] }
-  LDAP_Global_Catalog: { ports: [3268, 3269] }
-  AD_Web_Services:     { ports: [9389] }
-  SMB:                 { ports: [445] }
-  RPC:                 { ports: [135] }
-  NetBIOS:             { ports: [137, 138, 139] }
-  SMTP:                { ports: [25, 587, 465] }
-
-# ---------------------------------------------------------------------------
-# Alias naming hygiene
-# ---------------------------------------------------------------------------
-
+  FW_Management:
+    ports:
+    - 22
+    - 443
+    descr: Firewall administration
+  WEB_PORTS:
+    ports:
+    - 80
+    - 443
+  PORT_RDP_SSH:
+    ports:
+    - 3389
+    - 22
+  PORT_DNS:
+    ports:
+    - 53
+  Kerberos:
+    ports:
+    - 88
+    - 464
+  LDAP:
+    ports:
+    - 389
+  LDAP_Global_Catalog:
+    ports:
+    - 3268
+    - 3269
+  AD_Web_Services:
+    ports:
+    - 9389
+  SMB:
+    ports:
+    - 445
+  RPC:
+    ports:
+    - 135
+  NetBIOS:
+    ports:
+    - 137
+    - 138
+    - 139
+  SMTP:
+    ports:
+    - 25
+    - 587
+    - 465
 naming_rules:
-  forbidden_substrings: [temp, tmp, test, todo, xxx]
+  forbidden_substrings:
+  - temp
+  - tmp
+  - test
+  - todo
+  - xxx
   validator: V-ALIAS-NAME-HYGIENE
-  rationale: >-
-    A DCM26 enclave shipped a port alias literally named 'Temp' containing
-    22, 3389, 443, 80 and 3306, permitted from any source on the WAN — leaving
-    MySQL exposed to the greynet for the duration. Temporary rules outlive the
-    emergency that created them. Block the name and the habit goes with it.
+  rationale: A DCM26 enclave shipped a port alias literally named 'Temp' containing 22, 3389, 443, 80
+    and 3306, permitted from any source on the WAN — leaving MySQL exposed to the greynet for the duration.
+    Temporary rules outlive the emergency that created them. Block the name and the habit goes with it.
+named_services:
+  RDP:
+    tcp:
+    - 3389
+    descr: Remote Desktop
+    confidence: standard
+    note: Windows hosts are scored on this, and the user simulators need it.
+  SSH:
+    tcp:
+    - 22
+    descr: Secure shell
+    confidence: standard
+    note: Linux hosts are scored on this.
+  HTTP:
+    tcp:
+    - 80
+    descr: Web
+    confidence: standard
+  HTTPS:
+    tcp:
+    - 443
+    descr: Web over TLS
+    confidence: standard
+  DNS:
+    tcp:
+    - 53
+    udp:
+    - 53
+    descr: Name resolution
+    confidence: standard
+  NTP:
+    udp:
+    - 123
+    descr: Time
+    confidence: standard
+    note: Kerberos fails when clocks drift, and it fails as an authentication error.
+  SMB:
+    tcp:
+    - 445
+    - 139
+    udp:
+    - 137
+    - 138
+    descr: Windows file sharing
+    confidence: standard
+  Kerberos:
+    tcp:
+    - 88
+    - 464
+    udp:
+    - 88
+    - 464
+    descr: Windows authentication
+    confidence: standard
+  LDAP:
+    tcp:
+    - 389
+    - 636
+    udp:
+    - 389
+    descr: Directory
+    confidence: standard
+  LDAP Global Catalog:
+    tcp:
+    - 3268
+    - 3269
+    descr: Forest-wide directory
+    confidence: standard
+  AD Web Services:
+    tcp:
+    - 9389
+    descr: AD management tooling
+    confidence: standard
+  RPC endpoint mapper:
+    tcp:
+    - 135
+    descr: Windows RPC
+    confidence: standard
+  RPC dynamic range:
+    tcp_dynamic: 49152-65535
+    descr: Windows RPC high ports
+    confidence: standard
+    note: The trap. Authentication succeeds without it while replication, GPO and half the management
+      tooling silently do not, and no scored check notices.
+  SMTP:
+    tcp:
+    - 25
+    - 587
+    - 465
+    descr: Mail transport
+    confidence: standard
+    note: 25 is scored.
+  IMAP:
+    tcp:
+    - 143
+    - 993
+    descr: Mail retrieval
+    confidence: standard
+  POP3:
+    tcp:
+    - 110
+    - 995
+    descr: Mail retrieval
+    confidence: standard
+  MySQL/MariaDB:
+    tcp:
+    - 3306
+    descr: Database
+    confidence: standard
+    note: An alias named Temp left this exposed to the greynet for a whole exercise.
+  PostgreSQL:
+    tcp:
+    - 5432
+    descr: Database
+    confidence: standard
+  FTP control:
+    tcp:
+    - 21
+    descr: FTP
+    confidence: standard
+    note: pfSense has no FTP helper. Passive mode needs its data range opened too, and a port forward
+      on 21 alone does nothing.
+  SNMP:
+    udp:
+    - 161
+    descr: Monitoring
+    confidence: standard
+    note: Ships with the community string set to public. Turn it off unless something needs it.
+  Syslog:
+    udp:
+    - 514
+    tcp:
+    - 514
+    descr: Remote logging
+    confidence: standard
+  Elastic Fleet:
+    tcp:
+    - 8220
+    descr: Agent enrolment and check-in
+    confidence: assumed
+    note: 'Agents initiate outbound. An egress deny severs them silently: the agent buffers, then drops
+      events.'
+  Elasticsearch:
+    tcp:
+    - 9200
+    descr: Search and ingest
+    confidence: assumed
+  Logstash beats:
+    tcp:
+    - 5044
+    descr: Beats input
+    confidence: assumed
+  Kibana:
+    tcp:
+    - 5601
+    descr: Analyst interface
+    confidence: assumed
+  Modbus:
+    tcp:
+    - 502
+    descr: Industrial control
+    confidence: assumed
+  VNC:
+    tcp:
+    - 5900
+    descr: Remote desktop
+    confidence: standard
+  WinRM:
+    tcp:
+    - 5985
+    - 5986
+    descr: Windows remote management
+    confidence: standard
+host_types:
+  windows_workstation:
+    services:
+    - RDP
+    - SMB
+    default_os: Windows 10 22H2
+    descr: User workstation. Scored on RDP, and the user simulators log into it.
+  linux_workstation:
+    services:
+    - SSH
+    default_os: Ubuntu Desktop 24.04
+    descr: User workstation. Scored on SSH.
+  domain_controller:
+    services:
+    - DNS
+    - Kerberos
+    - LDAP
+    - LDAP Global Catalog
+    - AD Web Services
+    - RPC endpoint mapper
+    - RPC dynamic range
+    - SMB
+    - RDP
+    default_os: Windows Server 2022
+    descr: The heaviest scored target in an estate, and the easiest to half-break.
+  file_server:
+    services:
+    - SMB
+    - RDP
+    default_os: Windows Server 2022
+  mail_server:
+    services:
+    - SMTP
+    - IMAP
+    - POP3
+    - HTTPS
+    - HTTP
+    - RDP
+    default_os: Windows Server 2022
+    descr: HTTPS is the webmail interface and is usually required by the annex.
+  web_server:
+    services:
+    - HTTP
+    - HTTPS
+    - SSH
+    default_os: Ubuntu 24.04
+  database:
+    services:
+    - SSH
+    - MySQL/MariaDB
+    default_os: Ubuntu 24.04
+    descr: Often scored on SSH only. Do not assume the engine port is checked.
+  proxy:
+    services:
+    - HTTP
+    - HTTPS
+    - SSH
+    default_os: Ubuntu 24.04
+  ftp_server:
+    services:
+    - FTP control
+    - SSH
+    default_os: Ubuntu 24.04
+  nextcloud:
+    services:
+    - HTTP
+    - HTTPS
+    - SSH
+    default_os: Ubuntu 24.04
+  npc_server:
+    services:
+    - SSH
+    default_os: Ubuntu 24.04
+    descr: Out of bounds. Its outbound path is a scored obligation, so never build policy around blocking
+      it.
+  scoring_bot:
+    services: []
+    default_os: Ubuntu 24.04
+    descr: Out of bounds. Reaches everything scored; never a policy target.
+  router:
+    services:
+    - SSH
+    default_os: FRR
+  firewall:
+    services:
+    - SSH
+    - HTTPS
+    default_os: pfSense CE 2.8.1
+    descr: A scored target in its own right — do not forget it when tightening management access.
+  plc:
+    services:
+    - Modbus
+    default_os: Siemens
+    descr: Industrial. Treat availability as the priority.
+  hmi:
+    services:
+    - VNC
+    - HTTP
+    default_os: Windows
+  historian:
+    services:
+    - SSH
+    - HTTP
+    default_os: Linux

@@ -31,6 +31,7 @@ from btht.app.model.estate import (
     Estate,
     Firewall,
     Host,
+    HostGroup,
     Interface,
     Node,
     Platform,
@@ -66,6 +67,9 @@ def _host(data: dict[str, Any]) -> Host:
     v6 = data.get("v6")
     return Host(
         hostname=str(data["hostname"]),
+        os=str(data.get("os", "")),
+        services=tuple(str(s) for s in data.get("services", ()) or ()),
+        group=str(data.get("group", "")),
         v4=ip_address(str(v4)) if v4 else None,  # type: ignore[arg-type]
         v6=ip_address(str(v6)) if v6 else None,  # type: ignore[arg-type]
         segment_role=str(data.get("segment_role", "")),
@@ -73,6 +77,25 @@ def _host(data: dict[str, Any]) -> Host:
         isa_checks=tuple(str(c) for c in data.get("isa_checks", ())),
         out_of_bounds=bool(data.get("out_of_bounds", False)),
         source_of_truth=SourceOfTruth(str(data.get("source_of_truth", "wizard"))),
+    )
+
+
+def _host_group(data: dict[str, Any]) -> HostGroup:
+    v4 = data.get("v4_start")
+    v6 = data.get("v6_start")
+    return HostGroup(
+        name_prefix=str(data["name_prefix"]),
+        count=int(data.get("count", 1)),
+        first_index=int(data.get("first_index", 1)),
+        index_width=int(data.get("index_width", 2)),
+        segment_role=str(data.get("segment_role", "")),
+        host_type=str(data.get("host_type", "")),
+        os=str(data.get("os", "")),
+        v4_start=ip_address(str(v4)) if v4 else None,  # type: ignore[arg-type]
+        v6_start=ip_address(str(v6)) if v6 else None,  # type: ignore[arg-type]
+        services=tuple(str(s) for s in data.get("services", ()) or ()),
+        out_of_bounds=bool(data.get("out_of_bounds", False)),
+        note=str(data.get("note", "")).strip(),
     )
 
 
@@ -107,6 +130,7 @@ def _firewall(enclave_name: str, data: dict[str, Any]) -> Firewall:
         config_version=str(data.get("config_version", "")),
         interfaces=tuple(_interface(i) for i in data.get("interfaces", ())),
         hosts=tuple(_host(h) for h in data.get("hosts", ())),
+        host_groups=tuple(_host_group(g) for g in data.get("host_groups", ())),
         baseline_sha256=str(data.get("baseline_sha256", "")),
     )
 
@@ -184,8 +208,38 @@ def _interface_out(iface: Interface) -> dict[str, Any]:
     return out
 
 
+def _group_out(group: HostGroup) -> dict[str, Any]:
+    out: dict[str, Any] = {"name_prefix": group.name_prefix, "count": group.count}
+    for key, value in (
+        ("first_index", group.first_index),
+        ("index_width", group.index_width),
+        ("segment_role", group.segment_role),
+        ("host_type", group.host_type),
+        ("os", group.os),
+    ):
+        if value:
+            out[key] = value
+    if group.v4_start:
+        out["v4_start"] = str(group.v4_start)
+    if group.v6_start:
+        out["v6_start"] = str(group.v6_start)
+    if group.services:
+        out["services"] = list(group.services)
+    if group.out_of_bounds:
+        out["out_of_bounds"] = True
+    if group.note:
+        out["note"] = group.note
+    return out
+
+
 def _host_out(host: Host) -> dict[str, Any]:
     out: dict[str, Any] = {"hostname": host.hostname}
+    if host.os:
+        out["os"] = host.os
+    if host.services:
+        out["services"] = list(host.services)
+    if host.group:
+        out["group"] = host.group
     if host.v4:
         out["v4"] = str(host.v4)
     if host.v6:
@@ -240,6 +294,8 @@ def estate_to_document(
         fw["interfaces"] = [_interface_out(i) for i in firewall.interfaces]
         if firewall.hosts:
             fw["hosts"] = [_host_out(h) for h in firewall.hosts]
+        if firewall.host_groups:
+            fw["host_groups"] = [_group_out(g) for g in firewall.host_groups]
         entry["firewall"] = fw
 
     for node in estate.nodes:
