@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% block nav %} / <a href="/estates/{{ slug }}">{{ slug }}</a> / <strong>topology</strong>{% endblock %}
+{% block body %}
+<h1>{{ slug }} — topology</h1>
+<p class="sub">The estate as declared. Click anything for its detail. This is a view:
+to change the estate, <a href="/estates/{{ slug }}">edit it</a>.</p>
+
+<style>
+.topology{display:flex;gap:18px;align-items:flex-start;flex-wrap:wrap}
+.canvas{flex:2;min-width:320px;background:var(--panel);border:1px solid var(--line);
+  border-radius:8px;padding:6px;overflow-x:auto}
+.pane{flex:1;min-width:260px;background:var(--panel);border:1px solid var(--line);
+  border-radius:8px;padding:16px 18px;position:sticky;top:12px}
+svg .shape rect{fill:var(--bg);stroke:var(--line);stroke-width:1.5px;cursor:pointer}
+svg .shape:hover rect,svg .shape:focus rect{stroke:var(--accent);stroke-width:2px}
+svg .shape.firewall rect{fill:var(--accent-soft)}
+svg .accent-warn rect{stroke:var(--warn);fill:var(--warn-soft)}
+svg .accent-ok rect{stroke:var(--ok)}
+svg text{font-family:var(--mono);pointer-events:none}
+svg .label{font-size:13px;fill:var(--ink)}
+svg .sub{font-size:10.5px;fill:var(--muted)}
+svg .shape:focus{outline:none}
+.pane dl{margin:0;font-size:13px}
+.pane dt{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.04em;margin-top:9px}
+.pane dd{margin:1px 0 0;font-family:var(--mono);font-size:12.5px;word-break:break-all}
+.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}
+.actions a,.actions button{display:inline-block;text-decoration:none;font-size:12.5px;
+  padding:7px 12px;border-radius:5px;background:var(--accent);color:#fff;border:0;
+  cursor:pointer;margin:0}
+.actions .secondary{background:transparent;color:var(--accent);border:1px solid var(--line)}
+</style>
+
+<div class="topology">
+  <div class="canvas">{{ svg|safe }}</div>
+  <div class="pane" id="pane">
+    <p class="sub" id="empty">Select something on the diagram.</p>
+    <div id="detail" hidden>
+      <h2 id="detail-title" style="margin-top:0"></h2>
+      <div id="detail-warnings"></div>
+      <dl id="detail-fields"></dl>
+      <div class="actions" id="detail-actions"></div>
+      <p class="sub" id="copied" hidden>Copied.</p>
+    </div>
+  </div>
+</div>
+
+<script id="details" type="application/json">{{ details|safe }}</script>
+<script>
+(function () {
+  var data = JSON.parse(document.getElementById('details').textContent);
+  var pane = document.getElementById('detail');
+  var empty = document.getElementById('empty');
+  var title = document.getElementById('detail-title');
+  var fields = document.getElementById('detail-fields');
+  var warnings = document.getElementById('detail-warnings');
+  var actions = document.getElementById('detail-actions');
+  var copied = document.getElementById('copied');
+
+  function show(id) {
+    var item = data[id];
+    if (!item) { return; }
+    title.textContent = item.title;
+    fields.textContent = '';
+    warnings.textContent = '';
+    actions.textContent = '';
+    copied.hidden = true;
+
+    (item.warnings || []).forEach(function (text) {
+      var note = document.createElement('div');
+      note.className = 'note warn';
+      note.textContent = text;
+      warnings.appendChild(note);
+    });
+
+    (item.fields || []).forEach(function (pair) {
+      var dt = document.createElement('dt');
+      dt.textContent = pair[0];
+      var dd = document.createElement('dd');
+      dd.textContent = pair[1];
+      fields.appendChild(dt);
+      fields.appendChild(dd);
+    });
+
+    (item.actions || []).forEach(function (action) {
+      if (action.kind === 'copy') {
+        var button = document.createElement('button');
+        button.className = 'secondary';
+        button.textContent = action.label;
+        button.addEventListener('click', function () {
+          if (navigator.clipboard) { navigator.clipboard.writeText(action.href); }
+          copied.hidden = false;
+          copied.textContent = 'Copied: ' + action.href;
+        });
+        actions.appendChild(button);
+      } else {
+        var link = document.createElement('a');
+        link.href = action.href;
+        link.textContent = action.label;
+        if (action.kind === 'gui') { link.target = '_blank'; link.rel = 'noopener'; }
+        if (action.kind === 'ssh') { link.className = 'secondary'; }
+        actions.appendChild(link);
+      }
+    });
+
+    empty.hidden = true;
+    pane.hidden = false;
+  }
+
+  document.querySelectorAll('.shape').forEach(function (shape) {
+    shape.addEventListener('click', function () { show(shape.dataset.detail); });
+    shape.addEventListener('keydown', function (event) {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        show(shape.dataset.detail);
+      }
+    });
+  });
+})();
+</script>
+{% endblock %}

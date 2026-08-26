@@ -55,6 +55,14 @@ class Node:
     """Name of the key or account in the operator's store. Never the secret itself."""
 
     enclave: str | None = None
+    gui_url: str = ""
+    """Management GUI, where the device has one. Empty means the tool offers no GUI
+    link rather than inventing a URL that may not answer."""
+
+    ssh_user: str = ""
+    """The account **the operator** logs in as. Never the monitor's account, and never
+    a credential — this is only what to prefill in their own SSH client."""
+
     poll_seconds: int = 60
     """`MONITORING.md` §3.5. Below 30s the poll cost on pfSense starts to matter."""
 

@@ -89,6 +89,8 @@ def _node(data: dict[str, Any], enclave: str | None = None) -> Node:
         mgmt_address=ip_address(str(data["mgmt_address"])),
         credential_ref=str(data.get("credential_ref", "")),
         enclave=str(data.get("enclave", enclave)) if (data.get("enclave") or enclave) else None,
+        gui_url=str(data.get("gui_url", "")),
+        ssh_user=str(data.get("ssh_user", "")),
         poll_seconds=int(data.get("poll_seconds", 60)),
     )
 
@@ -209,6 +211,10 @@ def _node_out(node: Node) -> dict[str, Any]:
     }
     if node.credential_ref:
         out["credential_ref"] = node.credential_ref
+    if node.gui_url:
+        out["gui_url"] = node.gui_url
+    if node.ssh_user:
+        out["ssh_user"] = node.ssh_user
     if node.poll_seconds != 60:
         out["poll_seconds"] = node.poll_seconds
     return out

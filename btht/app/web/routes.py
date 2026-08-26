@@ -30,6 +30,7 @@ from btht.app.model.policy import (
     save_estate,
     side_rules_of,
 )
+from btht.app.web.topology import details_json, layout, render_svg
 
 TEMPLATES = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 router = APIRouter()
@@ -222,4 +223,22 @@ async def import_config(
         estate=estate,
         platforms=[p.value for p in Platform],
         messages=[("warn" if unresolved else "ok", note)],
+    )
+
+
+@router.get("/estates/{slug}/topology", response_class=HTMLResponse)
+def show_topology(request: Request, slug: str) -> HTMLResponse:
+    """The declared estate, drawn. Read-only by design — see `topology.py`."""
+    path = estate_path(slug)
+    if not path.exists():
+        return render(
+            request, "index.html", estates=[], messages=[("err", f"no estate called {slug}")]
+        )
+    diagram = layout(load_estate(path))
+    return render(
+        request,
+        "topology.html",
+        slug=path.stem,
+        svg=render_svg(diagram),
+        details=details_json(diagram),
     )

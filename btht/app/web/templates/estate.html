@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block nav %} / <strong>{{ slug }}</strong>{% endblock %}
+{% block nav %} / <strong>{{ slug }}</strong> · <a href="/estates/{{ slug }}/topology">topology</a>{% endblock %}
 {% block body %}
 <h1>{{ slug }}</h1>
 <p class="sub">team {{ estate.team }}{% if estate.team_padded %} ({{ estate.team_padded }} in names){% endif %}
