@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block nav %} / <a href="/estates/{{ slug }}">{{ slug }}</a> / <strong>{{ enclave }}</strong> / paste{% endblock %}
+{% block body %}
+<h1>{{ enclave }} — paste from the annex</h1>
+<p class="sub">An accelerator. Nothing here is applied until you confirm it, and the
+line you pasted is shown beside what the tool made of it.</p>
+
+<div class="panel">
+<form method="post" action="/estates/{{ slug }}/enclaves/{{ enclave }}/paste">
+  <label>paste the device list or the subnet table — either, or both at once</label>
+  <textarea name="text" rows="10" style="width:100%;font-family:var(--mono);font-size:12.5px;
+    padding:9px;border:1px solid var(--line);border-radius:5px;background:var(--bg);
+    color:var(--ink)">{{ text }}</textarea>
+  <button type="submit">Parse and show me</button>
+</form>
+</div>
+
+{% if parsed %}
+<div class="panel">
+<h2>What the tool read</h2>
+{% if unreadable %}
+<div class="note warn">{{ unreadable }} line(s) could not be read as a device. They are
+listed below with nothing filled in — correct them by hand or leave them out.</div>
+{% endif %}
+
+<form method="post" action="/estates/{{ slug }}/enclaves/{{ enclave }}/paste/confirm">
+  <input type="hidden" name="text" value="{{ text }}">
+  <table>
+    <tr><th>keep</th><th>host</th><th>IPv4</th><th>IPv6</th><th>description</th><th>the line you pasted</th></tr>
+    {% for row in parsed %}
+    <tr>
+      <td><input type="checkbox" name="keep" value="{{ loop.index0 }}"
+                 {% if row.looks_complete %}checked{% endif %} style="width:auto"></td>
+      <td>{{ row.name or "—" }}</td>
+      <td><code>{{ row.v4 or "—" }}</code></td>
+      <td><code>{{ row.v6 or "—" }}</code></td>
+      <td>{{ row.description }}
+        {% if row.out_of_bounds %}<br><span class="tag warn">out of bounds — will never be a policy target</span>{% endif %}
+      </td>
+      <td class="mono" style="color:var(--muted)">{{ row.source_line }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  <button type="submit">Keep the ticked rows</button>
+</form>
+</div>
+{% endif %}
+
+{% if subnets %}
+<div class="panel">
+<h2>Subnets in the paste</h2>
+<p class="sub">Not applied. Compared against the interfaces you have declared, because
+the annex and the box disagreeing is worth knowing before you generate anything.</p>
+<table>
+  <tr><th>from the annex</th><th>address</th><th>against your declared interfaces</th></tr>
+  {% for s in subnets %}
+  <tr>
+    <td>{{ s.name }}</td>
+    <td><code>{{ s.v4 }}</code></td>
+    <td>{% if s.matched %}<span class="tag">matches {{ s.matched }}</span>
+        {% else %}<span class="tag warn">no declared interface on this subnet</span>{% endif %}</td>
+  </tr>
+  {% endfor %}
+</table>
+</div>
+{% endif %}
+{% endblock %}

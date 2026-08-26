@@ -16,7 +16,9 @@ an interface the tool cannot place is shown to you instead.</p>
 {% for firewall in estate.firewalls %}
 <div class="panel">
 <h2>{{ firewall.enclave }} <a href="/estates/{{ slug }}/policy/{{ firewall.enclave }}"
-  style="font-size:12px;font-weight:400">declare its policy →</a></h2>
+  style="font-size:12px;font-weight:400">declare its policy →</a>
+  <a href="/estates/{{ slug }}/enclaves/{{ firewall.enclave }}/paste"
+  style="font-size:12px;font-weight:400">paste the annex →</a></h2>
 <p class="sub">
   {{ firewall.fqdn or "no FQDN" }} ·
   {{ firewall.node.platform.value }} at <code>{{ firewall.node.mgmt_address }}</code>

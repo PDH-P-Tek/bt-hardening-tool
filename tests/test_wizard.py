@@ -242,3 +242,86 @@ def test_problems_are_shown_while_the_operator_works(client: TestClient) -> None
     body = client.get("/estates/team42/policy/alpha?step=0").text
     assert "Not ready to generate" in body
     assert "Never_Declared" in body
+
+
+# --- annex paste, Phase 2.5 -------------------------------------------------
+
+ANNEX = """Hostname\tIPv4\tIPv6\tDescription
+dc01\t192.0.2.5\t2001:db8:2::5\tDomain controller
+npc-server\t192.0.2.249\t\tEXCON. Out of Bounds.
+Workstations\t192.0.2.0/24\t\tUser segment
+"""
+
+
+def test_a_paste_is_previewed_and_not_applied(client: TestClient, estate_file: Path) -> None:
+    """The rule this whole path exists for — `SPEC.md` §5.2."""
+    from btht.app.model.policy import load_estate
+
+    before = len(load_estate(estate_file).firewalls[0].hosts)
+    response = client.post("/estates/team42/enclaves/alpha/paste", data={"text": ANNEX})
+    assert response.status_code == 200
+    assert "dc01" in response.text
+    assert len(load_estate(estate_file).firewalls[0].hosts) == before, (
+        "previewing must not change the estate"
+    )
+
+
+def test_the_preview_shows_the_line_beside_the_parse(client: TestClient) -> None:
+    """A mis-parse is only visible if the operator can see what it was made from."""
+    body = client.post("/estates/team42/enclaves/alpha/paste", data={"text": ANNEX}).text
+    assert "the line you pasted" in body
+    assert "Domain controller" in body
+
+
+def test_only_ticked_rows_are_kept(client: TestClient, estate_file: Path) -> None:
+    from btht.app.model.policy import load_estate
+
+    client.post(
+        "/estates/team42/enclaves/alpha/paste/confirm",
+        data={"text": ANNEX, "keep": ["0"]},
+        follow_redirects=False,
+    )
+    hosts = load_estate(estate_file).firewalls[0].hosts
+    assert [h.hostname for h in hosts if h.source_of_truth.value == "annex"] == ["dc01"]
+
+
+def test_an_out_of_bounds_host_is_flagged_when_kept(client: TestClient, estate_file: Path) -> None:
+    """`BASELINE-ANALYSIS.md` F8 — it must never become a policy target."""
+    from btht.app.model.policy import load_estate
+
+    client.post(
+        "/estates/team42/enclaves/alpha/paste/confirm",
+        data={"text": ANNEX, "keep": ["0", "1"]},
+        follow_redirects=False,
+    )
+    hosts = {h.hostname: h for h in load_estate(estate_file).firewalls[0].hosts}
+    assert hosts["npc-server"].out_of_bounds is True
+    assert hosts["dc01"].out_of_bounds is False
+
+
+def test_kept_hosts_record_where_they_came_from(client: TestClient, estate_file: Path) -> None:
+    """A host from the annex and a host the operator typed are different evidence."""
+    from btht.app.model.policy import load_estate
+
+    client.post(
+        "/estates/team42/enclaves/alpha/paste/confirm",
+        data={"text": ANNEX, "keep": ["0"]},
+        follow_redirects=False,
+    )
+    kept = next(h for h in load_estate(estate_file).firewalls[0].hosts if h.hostname == "dc01")
+    assert kept.source_of_truth.value == "annex"
+
+
+def test_the_subnet_table_is_compared_and_never_applied(client: TestClient) -> None:
+    """`V-ANNEX-CONFIG-MISMATCH` — the annex and the box disagreeing is worth knowing."""
+    body = client.post("/estates/team42/enclaves/alpha/paste", data={"text": ANNEX}).text
+    assert "Subnets in the paste" in body
+    assert "matches users" in body, "192.0.2.0/24 is the declared users segment"
+
+
+def test_a_subnet_with_no_declared_interface_is_called_out(client: TestClient) -> None:
+    body = client.post(
+        "/estates/team42/enclaves/alpha/paste",
+        data={"text": "Storage\t10.10.10.0/24\t\tSAN segment\n"},
+    ).text
+    assert "no declared interface on this subnet" in body

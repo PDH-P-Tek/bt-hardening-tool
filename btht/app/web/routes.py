@@ -19,9 +19,10 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from btht.app.data import ESTATES
+from btht.app.ingest.annex import looks_out_of_bounds, parse_rows, split_kinds
 from btht.app.ingest.pfsense import ParseError, parse_string
 from btht.app.ingest.roles import derive_interfaces, derive_side
-from btht.app.model.estate import Estate, Firewall, Node, Platform
+from btht.app.model.estate import Estate, Firewall, Host, Node, Platform, SourceOfTruth
 from btht.app.model.policy import (
     EgressPolicy,
     EstateFileError,
@@ -386,3 +387,96 @@ def set_egress(
         path,
     )
     return RedirectResponse(f"/estates/{slug}/policy/{enclave}?step=egress", status_code=303)
+
+
+def _paste_context(estate: Estate, enclave: str, text: str) -> dict[str, Any]:
+    """Everything the preview needs. Nothing here touches the estate."""
+    rows = parse_rows(text) if text.strip() else ()
+    networks, hosts = split_kinds(rows)
+    firewall = estate.firewall(enclave)
+    declared = firewall.interfaces if firewall else ()
+
+    subnets = []
+    for row in networks:
+        matched = ""
+        for iface in declared:
+            if iface.v4 and str(iface.v4.network) == row.v4:
+                matched = iface.role
+                break
+        subnets.append({"name": row.name, "v4": row.v4, "matched": matched})
+
+    return {
+        "text": text,
+        "parsed": [
+            {
+                "name": row.name,
+                "v4": row.v4,
+                "v6": row.v6,
+                "description": row.description,
+                "source_line": row.source_line,
+                "looks_complete": row.looks_complete,
+                "out_of_bounds": looks_out_of_bounds(row),
+            }
+            for row in hosts
+        ],
+        "subnets": subnets,
+        "unreadable": sum(1 for row in hosts if not row.looks_complete),
+    }
+
+
+@router.get("/estates/{slug}/enclaves/{enclave}/paste", response_class=HTMLResponse)
+def paste_form(request: Request, slug: str, enclave: str) -> HTMLResponse:
+    return render(request, "paste.html", slug=estate_path(slug).stem, enclave=enclave, text="")
+
+
+@router.post("/estates/{slug}/enclaves/{enclave}/paste", response_class=HTMLResponse)
+def paste_preview(request: Request, slug: str, enclave: str, text: str = Form("")) -> HTMLResponse:
+    """Render the parse back. **Nothing is applied here** — `SPEC.md` §5.2."""
+    path = estate_path(slug)
+    estate = load_estate(path)
+    return render(
+        request,
+        "paste.html",
+        slug=path.stem,
+        enclave=enclave,
+        **_paste_context(estate, enclave, text),
+    )
+
+
+@router.post("/estates/{slug}/enclaves/{enclave}/paste/confirm")
+def paste_confirm(
+    slug: str, enclave: str, text: str = Form(""), keep: list[int] = Form(default=[])
+) -> RedirectResponse:
+    """Apply only the rows the operator ticked.
+
+    The paste is parsed again here rather than trusting values round-tripped through
+    the form: what gets saved is then provably what was previewed, from the same input
+    through the same code.
+    """
+    path = estate_path(slug)
+    estate = load_estate(path)
+    _, rows = split_kinds(parse_rows(text))
+    chosen = [rows[i] for i in keep if 0 <= i < len(rows)]
+
+    new_hosts = tuple(
+        Host(
+            hostname=row.name,
+            v4=parse_address(row.v4) if row.v4 else None,
+            v6=parse_address(row.v6) if row.v6 else None,
+            out_of_bounds=looks_out_of_bounds(row),
+            source_of_truth=SourceOfTruth.ANNEX,
+        )
+        for row in chosen
+        if row.looks_complete
+    )
+    firewalls = tuple(
+        replace(fw, hosts=(*fw.hosts, *new_hosts)) if fw.enclave == enclave else fw
+        for fw in estate.firewalls
+    )
+    save_estate(
+        replace(estate, firewalls=firewalls),
+        path,
+        convention_of(path).enclave_tokens,
+        side_rules_of(path),
+    )
+    return RedirectResponse(f"/estates/{slug}", status_code=303)
