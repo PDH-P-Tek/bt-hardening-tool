@@ -7,7 +7,7 @@ on something outside the code.
 **This does not replace those lists.** Every step cites its source, and the source
 stays authoritative on *what* the step must do. This file is authoritative on *when*.
 
-Status: **Phase 0 complete. Phase 1 in progress** — 1.1 and 1.2 done, 1.3 next.
+Status: **Phase 0 complete. Phase 1 in progress** — 1.1, 1.2 and 1.3 done. 1.4 next, then Phase 2 unlocks.
 
 ---
 
@@ -53,7 +53,7 @@ uses at 6.1 — write it once.
 |---|---|---|---|
 | 1.1 | ✅ pfSense config ingest → domain objects. `<aliases>`, `<filter>`, `<nat>` and the fixed fact list, nothing else | §5.4 | Round-trips a fixture; retains nothing outside the allow-list |
 | 1.2 | ✅ Interface role derivation and `estate_side` | §4.1, §4.2 | `dsoc` `lan`→`svrs` / `opt1`→`ws`; `mcu` classifies host_nation from its WAN |
-| 1.3 | Normalisation and the two-tier fingerprint | §6.1, §6.2 | **Property tests pass.** `any`/`0.0.0.0/0`, `53`/`53-53`, ordering permutations collapse to one fingerprint |
+| 1.3 | ✅ Normalisation and the two-tier fingerprint | §6.1, §6.2 | **Property tests pass.** `any`/`0.0.0.0/0`, `53`/`53-53`, ordering permutations collapse to one fingerprint |
 | 1.4 | Seed profile load and classification | §4.3 | Classifies a fixture, reports match tier per item |
 
 **Milestone reached: `python -m btht map <config>...`** prints the interface map, the

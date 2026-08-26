@@ -15,11 +15,12 @@ nothing else.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from ipaddress import IPv4Network, IPv6Network, ip_network
 
 from btht.app.ingest.pfsense import RawInterface
 from btht.app.model.estate import Interface
+from btht.app.model.rules import Endpoint, InterfaceNet, Negated, Rule
 
 #: Marks a description the convention could not resolve. Carries the original text so
 #: triage can show it. Never resolved by guessing.
@@ -130,4 +131,35 @@ def side_rules_from_mapping(data: list[dict[str, str]]) -> tuple[SideRule, ...]:
     return tuple(
         SideRule(network=ip_network(entry["network"], strict=False), label=entry["label"])
         for entry in data
+    )
+
+
+def _remap_endpoint(endpoint: Endpoint, mapping: dict[str, str]) -> Endpoint:
+    match endpoint:
+        case Negated(inner):
+            return Negated(_remap_endpoint(inner, mapping))
+        case InterfaceNet(token):
+            return InterfaceNet(mapping.get(token, token))
+    return endpoint
+
+
+def apply_roles(rules: tuple[Rule, ...], mapping: dict[str, str]) -> tuple[Rule, ...]:
+    """Rewrite every ifname a rule mentions into the estate's role token.
+
+    **This must happen before anything is fingerprinted.** Rules come out of the parser
+    carrying `lan` and `opt1`, and hashing those is the exact mistake the role layer
+    exists to prevent: on the inverted enclave `lan` is the server segment, so an
+    identical fingerprint would mean two opposite things on two firewalls.
+
+    An unmapped token is carried through unchanged rather than dropped, so it surfaces
+    downstream instead of vanishing.
+    """
+    return tuple(
+        replace(
+            rule,
+            interfaces=tuple(mapping.get(name, name) for name in rule.interfaces),
+            source=_remap_endpoint(rule.source, mapping),
+            destination=_remap_endpoint(rule.destination, mapping),
+        )
+        for rule in rules
     )

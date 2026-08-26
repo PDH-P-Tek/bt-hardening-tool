@@ -240,10 +240,13 @@ Applied before fingerprinting. A brittle fingerprint fires the triage modal cons
 | address lists | sorted, deduplicated |
 | team number | templated to `{X}` / `{XX}` before hashing |
 | `<descr>`, `<id>`, `<tracker>`, `<detail>`, `<log>` | **excluded from the fingerprint** |
+| a rule bound to **every** interface on its firewall | `*` |
 
 ### 6.2 Two-tier fingerprint
 
 **Strict** — SHA-256 over canonical JSON of `type, floating, quick, direction, sorted(interface_roles), ipprotocol, protocol, sorted(icmptype), source, destination, srcport, dstport, statetype`. Exact match applies the stored classification silently, no prompt.
+
+> **Interfaces are roles, and they are remapped before hashing.** Rules leave the parser carrying `lan` and `opt1`. Hashing those makes the inverted enclave's server rule and a conventional enclave's workstation rule one identity — the exact confusion §4.1 exists to prevent. And a rule on *all* interfaces collapses to `*`, without which the same shipped protected rule fingerprints differently on every enclave with a different interface count, and one profile can never match a whole estate.
 
 **Structural** — same, with each `Endpoint` reduced to its kind and alias contents ignored. Structural-only match prompts with the delta stated in words:
 
