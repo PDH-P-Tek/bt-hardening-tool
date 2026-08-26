@@ -84,9 +84,11 @@ Two are worth knowing before you touch the pfSense adapter: whether pfSense pres
 
 ## Repository state and commands
 
-Phase 0 is complete and Phase 1 is in progress: the pfSense parser and role derivation
-exist, with `python -m btht map <config>...` printing an estate's interface map.
-Normalisation and fingerprinting (1.3) are next, and gate all of Phase 2. `uv` manages the environment, Python is pinned to
+Phases 0 and 1 are complete: parser, role derivation, normalisation, two-tier
+fingerprinting and profile classification. Two commands exist —
+`python -m btht map <config>...` prints an estate's interface map, and
+`python -m btht classify <config>... --team N` reports what the profile recognised
+and what still needs a human. Phase 2 is next. `uv` manages the environment, Python is pinned to
 3.12 in `.python-version` (the spec floor is 3.11).
 
 ```bash

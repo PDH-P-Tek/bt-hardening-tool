@@ -103,6 +103,7 @@
       <floating>yes</floating>
       <direction>any</direction>
       <ipprotocol>inet46</ipprotocol>
+      <statetype>keep state</statetype>
       <protocol>tcp/udp</protocol>
       <source><any></any></source>
       <destination><any></any><port>53</port></destination>
@@ -115,6 +116,7 @@
       <floating>yes</floating>
       <direction>any</direction>
       <ipprotocol>inet46</ipprotocol>
+      <statetype>keep state</statetype>
       <protocol>udp</protocol>
       <source><any></any></source>
       <destination><any></any><port>123</port></destination>
@@ -127,6 +129,7 @@
       <floating>yes</floating>
       <direction>any</direction>
       <ipprotocol>inet46</ipprotocol>
+      <statetype>keep state</statetype>
       <protocol>icmp</protocol>
       <icmptype>any</icmptype>
       <source><any></any></source>
@@ -139,6 +142,7 @@
       <type>pass</type>
       <interface>wan</interface>
       <ipprotocol>inet46</ipprotocol>
+      <statetype>keep state</statetype>
       <source><address>Remote_Access</address></source>
       <destination><any></any></destination>
       <descr>VPN access for exercise participants</descr>
@@ -148,6 +152,7 @@
       <type>pass</type>
       <interface>wan</interface>
       <ipprotocol>inet46</ipprotocol>
+      <statetype>keep state</statetype>
       <source><address>Routers</address></source>
       <destination><network>(self)</network></destination>
       <descr>Routing information exchange</descr>
@@ -157,6 +162,7 @@
       <type>pass</type>
       <interface>wan</interface>
       <ipprotocol>inet46</ipprotocol>
+      <statetype>keep state</statetype>
       <source><network>(self)</network></source>
       <destination><any></any></destination>
       <descr>Firewall outbound traffic</descr>
@@ -166,6 +172,7 @@
       <type>pass</type>
       <interface>wan</interface>
       <ipprotocol>inet46</ipprotocol>
+      <statetype>keep state</statetype>
       <source><any></any></source>
       <destination><any></any></destination>
       <descr></descr>
@@ -176,6 +183,7 @@
       <type>pass</type>
       <interface>lan</interface>
       <ipprotocol>inet46</ipprotocol>
+      <statetype>keep state</statetype>
       <source><any></any></source>
       <destination><any></any></destination>
       <descr></descr>
@@ -185,6 +193,7 @@
       <type>pass</type>
       <interface>opt1</interface>
       <ipprotocol>inet46</ipprotocol>
+      <statetype>keep state</statetype>
       <source><any></any></source>
       <destination><any></any></destination>
       <descr></descr>
@@ -194,6 +203,7 @@
       <type>pass</type>
       <interface>opt2</interface>
       <ipprotocol>inet46</ipprotocol>
+      <statetype>keep state</statetype>
       <source><any></any></source>
       <destination><any></any></destination>
       <descr></descr>

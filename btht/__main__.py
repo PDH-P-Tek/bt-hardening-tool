@@ -18,16 +18,20 @@ from typing import Any
 
 import yaml
 
+from btht.app.ingest.classify import Tier, classify_aliases, classify_rules
+from btht.app.ingest.normalise import Template, alias_table
 from btht.app.ingest.pfsense import ParseError, parse_file
 from btht.app.ingest.roles import (
     RoleConvention,
     SideRule,
+    apply_roles,
     convention_from_mapping,
     derive_interfaces,
     derive_side,
     is_unresolved,
     side_rules_from_mapping,
 )
+from btht.app.model.profile import load_profile
 
 
 def load_setup(path: Path | None) -> tuple[RoleConvention, tuple[SideRule, ...]]:
@@ -68,6 +72,49 @@ def print_map(config: Path, convention: RoleConvention, sides: tuple[SideRule, .
     return 0
 
 
+def print_classification(
+    config: Path,
+    profile_path: Path,
+    convention: RoleConvention,
+    team: int | None,
+) -> int:
+    """Show what the profile recognised, and what still needs a human."""
+    try:
+        parsed = parse_file(config)
+        profile = load_profile(profile_path)
+    except (ParseError, OSError) as exc:
+        print(f"{config.name}: {exc}", file=sys.stderr)
+        return 1
+
+    interfaces = derive_interfaces(parsed.interfaces, convention)
+    roles = frozenset(i.role for i in interfaces)
+    rules = apply_roles(parsed.rules, {i.ifname: i.role for i in interfaces})
+    template = Template(number=team, padded=str(team) if team is not None else "")
+
+    rule_matches = classify_rules(rules, alias_table(parsed.aliases), profile, template, roles)
+    alias_matches = classify_aliases(parsed.aliases, profile, template)
+
+    print(f"\n{config.name}")
+    for alias_match in alias_matches:
+        flag = " LOCKOUT-CRITICAL" if alias_match.lockout_critical else ""
+        print(f"  {alias_match.tier.value:<11} alias {alias_match.alias.name}{flag}")
+    for rule_match in rule_matches:
+        label = rule_match.rule.descr or "(no description)"
+        print(
+            f"  {rule_match.tier.value:<11} {','.join(rule_match.rule.interfaces):<22}"
+            f" {rule_match.role.value:<20} {label[:38]}"
+        )
+
+    undecided = sum(1 for m in rule_matches if m.needs_a_human) + sum(
+        1 for m in alias_matches if m.tier is not Tier.STRICT
+    )
+    if undecided:
+        print(f"  {undecided} item(s) need a decision before anything is generated")
+    else:
+        print("  everything recognised — nothing to triage")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="btht", description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -81,8 +128,20 @@ def main(argv: list[str] | None = None) -> int:
         help="YAML declaring this estate's interface_roles and sides",
     )
 
+    check = sub.add_parser("classify", help="match a config against a classification profile")
+    check.add_argument("configs", nargs="+", type=Path)
+    check.add_argument("--setup", type=Path, default=None)
+    check.add_argument("--profile", type=Path, default=Path("seed-profile.yaml"))
+    check.add_argument("--team", type=int, default=None, help="team number, for templating")
+
     args = parser.parse_args(argv)
     convention, sides = load_setup(args.setup)
+
+    if args.command == "classify":
+        return max(
+            print_classification(config, args.profile, convention, args.team)
+            for config in args.configs
+        )
     return max(print_map(config, convention, sides) for config in args.configs)
 
 

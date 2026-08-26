@@ -81,3 +81,55 @@ def test_map_reports_a_bad_file_without_a_traceback(
     bad.write_text("<opnsense/>", encoding="utf-8")
     assert main(["map", str(bad)]) == 1
     assert "expected 'pfsense'" in capsys.readouterr().err
+
+
+# --- classify --------------------------------------------------------------
+
+
+def test_classify_reports_a_clean_baseline_as_needing_no_triage(
+    setup_file: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = Path(__file__).resolve().parents[1]
+    assert (
+        main(
+            [
+                "classify",
+                str(BASELINE / "do-baseline.xml"),
+                "--setup",
+                str(setup_file),
+                "--profile",
+                str(root / "seed-profile.yaml"),
+                "--team",
+                "42",
+            ]
+        )
+        == 0
+    )
+    out = capsys.readouterr().out
+    assert "everything recognised" in out
+    assert "permissive_default" in out, "and it says which rules are the open doors"
+
+
+def test_classify_names_what_still_needs_a_decision(
+    setup_file: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The lockout-critical flag has to survive onto the screen, not just into the model."""
+    root = Path(__file__).resolve().parents[1]
+    assert (
+        main(
+            [
+                "classify",
+                str(BASELINE / "mcu-baseline.xml"),
+                "--setup",
+                str(setup_file),
+                "--profile",
+                str(root / "seed-profile.yaml"),
+                "--team",
+                "42",
+            ]
+        )
+        == 0
+    )
+    out = capsys.readouterr().out
+    assert "need a decision" in out
+    assert "LOCKOUT-CRITICAL" in out

@@ -89,6 +89,10 @@ def canonical_address(text: str) -> str:
     text through it rather than trusting how the configuration spelled it.
     """
     raw = text.strip()
+    if "{" in raw:
+        # Already templated — a profile entry such as `25.{X}.0.1`. Lowercasing it
+        # would turn the placeholder into `{x}` and it would match nothing.
+        return raw
     try:
         return str(ip_address(raw))
     except ValueError:
