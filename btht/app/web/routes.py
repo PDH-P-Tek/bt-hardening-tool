@@ -128,6 +128,7 @@ def _range_page(
     params = request.query_params
     enclave = params.get("enclave", "")
     ifname = params.get("interface", "")
+    showing_devices = params.get("devices") == "1"
 
     firewall = estate.firewall(enclave) if enclave else None
     interface = None
@@ -149,6 +150,8 @@ def _range_page(
         host_count=sum(len(f.all_hosts(catalogue)) for f in estate.firewalls),
         selected_enclave=enclave,
         selected_interface=ifname,
+        showing_devices=showing_devices,
+        devices=sorted(estate.nodes, key=lambda n: n.name),
         firewall=firewall,
         interface=interface,
         hosts=hosts,
@@ -222,6 +225,7 @@ def add_interface(
     v4: str = Form(""),
     v6: str = Form(""),
     descr: str = Form(""),
+    upstreams: list[str] = Form(default=[]),
 ) -> RedirectResponse:
     from btht.app.model.estate import Interface
 
@@ -234,6 +238,7 @@ def add_interface(
         v4=parse_address(v4),
         v6=parse_address(v6),
         is_lan=ifname.strip() == "lan",
+        upstreams=tuple(u for u in upstreams if u),
     )
     firewalls = tuple(
         replace(fw, interfaces=(*fw.interfaces, interface)) if fw.enclave == enclave else fw
@@ -747,6 +752,14 @@ def edit_interface_form(request: Request, enclave: str, ifname: str) -> HTMLResp
             {"name": "v4", "label": "IPv4 with prefix", "value": str(interface.v4 or "")},
             {"name": "v6", "label": "IPv6 with prefix", "value": str(interface.v6 or "")},
             {"name": "descr", "label": "description", "value": interface.descr},
+            {
+                "name": "upstreams",
+                "label": "connects to, comma separated",
+                "value": ", ".join(interface.upstreams),
+                "hint": "Declared devices this interface peers with — usually the "
+                "routers a WAN talks to. Declared: "
+                + (", ".join(sorted(n.name for n in load_estate(path).nodes)) or "none yet"),
+            },
         ],
     )
 
@@ -760,6 +773,7 @@ def edit_interface(
     v4: str = Form(""),
     v6: str = Form(""),
     descr: str = Form(""),
+    upstreams: str = Form(""),
 ) -> RedirectResponse:
     path = estate_path()
     renamed = new_ifname.strip() or ifname
@@ -769,6 +783,7 @@ def edit_interface(
         "v6": parse_address(v6),
         "descr": descr.strip(),
         "is_lan": renamed == "lan",
+        "upstreams": _split(upstreams),
     }
     if renamed != ifname:
         changes["ifname"] = renamed
@@ -1439,3 +1454,61 @@ def add_group(
         f"{group.count} × {group.name_prefix} added",
         where=f"enclave={enclave}&interface={ifname}",
     )
+
+
+@router.post("/range/devices")
+def add_device(
+    name: str = Form(...),
+    platform: str = Form("frr"),
+    mgmt_address: str = Form(...),
+    ssh_user: str = Form(""),
+    gui_url: str = Form(""),
+    credential_ref: str = Form(""),
+    poll_seconds: int = Form(60),
+) -> RedirectResponse:
+    """A router, or anything else on the range that is not a firewall.
+
+    They exist in their own right: the monitor polls them, and an interface can say it
+    peers with them.
+    """
+    from dataclasses import replace as dc_replace
+
+    path = estate_path()
+    estate = load_estate(path)
+    try:
+        node = Node(
+            name=name.strip(),
+            platform=Platform(platform),
+            mgmt_address=parse_address(mgmt_address),
+            ssh_user=ssh_user.strip(),
+            gui_url=gui_url.strip(),
+            credential_ref=credential_ref.strip(),
+            poll_seconds=poll_seconds,
+        )
+    except ValueError as exc:
+        return _back(str(exc), "err", where="devices=1")
+    _save(dc_replace(estate, nodes=(*estate.nodes, node)), path)
+    return _back(f"{node.name} added", where="devices=1")
+
+
+@router.post("/range/devices/{name}/delete")
+def delete_device(name: str) -> RedirectResponse:
+    """Refused while an interface still says it peers with this device."""
+    from dataclasses import replace as dc_replace
+
+    path = estate_path()
+    estate = load_estate(path)
+    peers = [
+        f"{f.enclave}/{i.ifname}"
+        for f in estate.firewalls
+        for i in f.interfaces
+        if name in i.upstreams
+    ]
+    if peers:
+        return _back(
+            f"{name} is still connected to " + ", ".join(peers) + ". Clear those first.",
+            "err",
+            where="devices=1",
+        )
+    _save(dc_replace(estate, nodes=tuple(n for n in estate.nodes if n.name != name)), path)
+    return _back(f"{name} removed", where="devices=1")

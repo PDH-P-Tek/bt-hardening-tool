@@ -234,9 +234,47 @@ def test_the_same_view_always_draws_the_same_picture() -> None:
     assert first == second
 
 
-def test_firewalls_are_linked_to_what_they_connect_through() -> None:
-    """A firewall drawn connected to nothing reads as an error."""
-    assert layout(an_estate(), View(), "demo", CATALOGUE).links
+def test_a_firewall_is_linked_only_to_what_it_declares() -> None:
+    """A line to every router would look like knowledge and be a guess.
+
+    Which router an enclave actually peers with is what decides whether its routing
+    rule covers the adjacency it needs, so the diagram draws what was declared and
+    leaves the rest unconnected — visibly, so somebody fixes it.
+    """
+    from dataclasses import replace
+
+    estate = an_estate()
+    assert layout(estate, View(), "demo", CATALOGUE).links == [], (
+        "nothing declared, so nothing drawn"
+    )
+
+    firewall = estate.firewalls[0]
+    wired = replace(
+        firewall,
+        interfaces=tuple(
+            replace(i, upstreams=("r1",)) if i.ifname == "wan" else i
+            for i in firewall.interfaces
+        ),
+    )
+    assert layout(replace(estate, firewalls=(wired,)), View(), "demo", CATALOGUE).links
+
+
+def test_an_unconnected_firewall_says_so() -> None:
+    diagram = layout(an_estate(), View(focus_id="alpha"), "demo", CATALOGUE)
+    assert any("drawn unconnected" in w for w in diagram.focus["warnings"])
+
+
+def test_each_segment_hangs_off_the_firewall_not_off_its_neighbour() -> None:
+    """Stacked interfaces on one shared vertical read as a chain, which is not the wiring.
+
+    One spine drops from the firewall and each segment gets its own stub off it.
+    """
+    diagram = layout(an_estate(), View(open_ids=frozenset({"alpha"})), "demo", CATALOGUE)
+    stubs = [link for link in diagram.links if link.shape == "line" and link.y1 == link.y2]
+    spines = [link for link in diagram.links if link.shape == "line" and link.x1 == link.x2]
+    assert len(stubs) == 2, "one per segment"
+    assert len(spines) == 1, "and one spine for the firewall"
+    assert len({stub.y1 for stub in stubs}) == 2, "each at its own height"
 
 
 def test_no_text_escapes_its_box() -> None:

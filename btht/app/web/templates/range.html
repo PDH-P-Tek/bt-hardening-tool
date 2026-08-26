@@ -33,7 +33,64 @@
   <a class="tile add {% if selected_enclave == '__new' %}here{% endif %}" href="/range?enclave=__new">
     <span class="count">+</span><h3>Add an enclave</h3><p>A firewall and its segments</p>
   </a>
+  <a class="tile {% if showing_devices %}here{% endif %}" href="/range?devices=1">
+    <span class="count">{{ devices|length }}</span>
+    <h3>Routers and devices</h3>
+    <p>Everything on the range that is not a firewall</p>
+  </a>
 </div>
+
+{% if showing_devices %}
+<div class="panel">
+<h2>Routers and other devices</h2>
+{% if devices %}
+<table>
+  <tr><th>name</th><th>platform</th><th>address</th><th>connected to</th><th></th></tr>
+  {% for d in devices %}
+  <tr>
+    <td>{{ d.name }}</td>
+    <td>{{ d.platform.value }}</td>
+    <td><code>{{ d.mgmt_address }}</code></td>
+    <td class="sub">
+      {% set peers = [] %}
+      {% for f in estate.firewalls %}{% for i in f.interfaces %}
+        {% if d.name in i.upstreams %}{% set _ = peers.append(f.enclave ~ "/" ~ i.ifname) %}{% endif %}
+      {% endfor %}{% endfor %}
+      {{ peers|join(", ") or "nothing yet" }}
+    </td>
+    <td>
+      <form method="post" action="/range/devices/{{ d.name }}/delete"
+            onsubmit="return confirm('Remove {{ d.name }}?')">
+        <button class="btn small danger" type="submit">Remove</button>
+      </form>
+    </td>
+  </tr>
+  {% endfor %}
+</table>
+{% else %}
+<div class="note warn">None declared. Firewalls will be drawn unconnected until you add
+the routers they peer with.</div>
+{% endif %}
+
+<h3 style="font-size:14px">Add a device</h3>
+<form method="post" action="/range/devices">
+  <div class="row">
+    <div><label>name</label><input name="name" placeholder="r1" required></div>
+    <div><label>platform</label><select name="platform">
+      {% for p in platforms %}<option value="{{ p }}">{{ p }}</option>{% endfor %}</select></div>
+    <div><label>management address</label><input name="mgmt_address" placeholder="25.42.0.1" required></div>
+  </div>
+  <div class="row">
+    <div><label>your SSH username</label><input name="ssh_user"></div>
+    <div><label>management GUI URL</label><input name="gui_url"></div>
+    <div><label>credential name</label><input name="credential_ref" placeholder="monitor-key"></div>
+    <div><label>poll interval, seconds</label>
+      <input name="poll_seconds" type="number" min="30" value="60"></div>
+  </div>
+  <button class="btn" type="submit">Add device</button>
+</form>
+</div>
+{% endif %}
 
 {% if selected_enclave == "__new" %}
 <div class="panel">
@@ -68,6 +125,7 @@
     <span class="count">{{ firewall.all_hosts()|selectattr("segment_role", "equalto", i.role)|list|length }}</span>
     <h3>{{ i.role }}{% if i.role.startswith("other:") %} ⚠{% endif %}</h3>
     <p><code>{{ i.ifname }}</code> · {{ i.v4 or "no address" }}
+      {% if i.upstreams %}<br>→ {{ i.upstreams|join(", ") }}{% endif %}
       {% if i.is_lan %}<br><span class="tag warn">anti-lockout</span>{% endif %}</p>
   </a>
   {% endfor %}
@@ -96,6 +154,21 @@
     <div><label>IPv6 with prefix</label><input name="v6" placeholder="fd81:25:42:10::1/64"></div>
   </div>
   <label>description</label><input name="descr">
+  {% if devices %}
+  <label>connects to</label>
+  <div class="row">
+    {% for d in devices %}
+    <div style="flex:0 0 auto">
+      <label style="text-transform:none">
+        <input type="checkbox" name="upstreams" value="{{ d.name }}" style="width:auto">
+        {{ d.name }} <span class="sub">{{ d.mgmt_address }}</span>
+      </label>
+    </div>
+    {% endfor %}
+  </div>
+  <div class="sub" style="margin-top:3px">Which declared devices this interface peers
+  with. Usually the routers a WAN talks to.</div>
+  {% endif %}
   <button class="btn" type="submit">Add interface</button>
 </form>
 </div>

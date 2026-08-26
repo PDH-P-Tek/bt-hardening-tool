@@ -59,6 +59,7 @@ def _interface(data: dict[str, Any]) -> Interface:
         v4=IPv4Interface(str(v4)) if v4 else None,
         v6=IPv6Interface(str(v6)) if v6 else None,
         is_lan=bool(data.get("is_lan", False)),
+        upstreams=tuple(str(u) for u in data.get("upstreams", ()) or ()),
     )
 
 
@@ -207,6 +208,8 @@ def _interface_out(iface: Interface) -> dict[str, Any]:
         out["v6"] = str(iface.v6)
     if iface.is_lan:
         out["is_lan"] = True
+    if iface.upstreams:
+        out["upstreams"] = list(iface.upstreams)
     return out
 
 

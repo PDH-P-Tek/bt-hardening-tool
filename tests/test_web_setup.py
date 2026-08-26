@@ -321,9 +321,7 @@ def test_a_machine_can_be_typed_in_without_pasting_an_annex(
     assert "RPC dynamic range" in host.services, "the template's services came with it"
 
 
-def test_many_machines_of_one_kind_are_one_declaration(
-    client: TestClient, tmp_path: Path
-) -> None:
+def test_many_machines_of_one_kind_are_one_declaration(client: TestClient, tmp_path: Path) -> None:
     with_an_enclave(client)
     client.post(
         "/range/enclaves/alpha/groups",

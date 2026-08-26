@@ -40,6 +40,7 @@ LABEL_BASELINE = 19
 SUBLABEL_BASELINE = 34
 HOSTS_PER_ROW = 4
 UPLINK_HEIGHT = 46
+SPINE_INSET = 14
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,12 +62,19 @@ class Shape:
 
 @dataclass(frozen=True, slots=True)
 class Link:
-    """A line between two things. Drawn as an elbow, so crossings stay readable."""
+    """A line between two things.
+
+    `elbow` routes down-across-down and suits one thing joining another. `line` is
+    straight, and is what builds a bus: a spine dropping from a firewall with a stub
+    to each of its interfaces. Stacking interfaces on a single shared vertical reads
+    as each one hanging off the one above it, which is not what the wiring does.
+    """
 
     x1: int
     y1: int
     x2: int
     y2: int
+    shape: str = "elbow"
 
 
 @dataclass
@@ -186,6 +194,12 @@ def _firewall_detail(firewall: Firewall, hosts: tuple[Host, ...]) -> dict[str, A
             "No host here has a scored check assigned. Confirm on the board that this "
             "enclave really is unscored."
         )
+    if not any(i.upstreams for i in firewall.interfaces):
+        warnings.append(
+            "No upstream devices declared, so this firewall is drawn unconnected. Set "
+            "them on the WAN interface — which routers it peers with is what decides "
+            "whether the routing rule covers the adjacency it needs."
+        )
     return {
         "title": firewall.fqdn or firewall.enclave,
         "fields": [
@@ -232,6 +246,7 @@ def _interface_detail(
         "title": f"{firewall.enclave} · {interface.role}",
         "fields": [
             ("interface", interface.ifname),
+            ("connects to", ", ".join(interface.upstreams) or "nothing declared"),
             ("role", interface.role),
             ("IPv4", str(interface.v4) if interface.v4 else "none"),
             ("IPv6", str(interface.v6) if interface.v6 else "none"),
@@ -316,7 +331,7 @@ def layout(
         (n.name, f"{n.platform.value} · {n.mgmt_address}", f"node:{n.name}") for n in routers
     ]
     if not uplink_labels:
-        uplink_labels = [("uplink", "no routers declared", "uplink")]
+        uplink_labels = [("no devices declared", "add routers on the Range page", "uplink")]
 
     total_width = 0
     widths = [_column_width(f, view) for f in firewalls]
@@ -325,7 +340,7 @@ def layout(
 
     uplink_span = canvas_width - 2 * PADDING
     slot = uplink_span // max(len(uplink_labels), 1)
-    uplink_points: list[int] = []
+    uplink_points: dict[str, int] = {}
     for index, (name, sub, node_id) in enumerate(uplink_labels):
         x = PADDING + index * slot + (slot - min(slot - GAP, CARD_WIDTH)) // 2
         width = min(slot - GAP, CARD_WIDTH)
@@ -344,7 +359,7 @@ def layout(
                 href=view.focus_link(node_id, slug) if slug else "",
             )
         )
-        uplink_points.append(x + width // 2)
+        uplink_points[name] = x + width // 2
 
     # Tier 2 — one firewall per enclave, and everything open beneath it.
     row_y = uplink_y + UPLINK_HEIGHT + GAP * 2
@@ -376,12 +391,19 @@ def layout(
                 else "click to close",
             )
         )
-        for point in uplink_points:
-            diagram.links.append(
-                Link(point, uplink_y + UPLINK_HEIGHT, x_cursor + width // 2, row_y)
-            )
+        # Only the links the operator declared. A line to every router would look like
+        # knowledge and be a guess — and which router an enclave peers with is what
+        # decides whether its routing rule covers the adjacency it needs.
+        declared_upstreams = {name for iface in firewall.interfaces for name in iface.upstreams}
+        for name, point in uplink_points.items():
+            if name in declared_upstreams:
+                diagram.links.append(
+                    Link(point, uplink_y + UPLINK_HEIGHT, x_cursor + width // 2, row_y)
+                )
 
         inner_y = row_y + CARD_HEIGHT + GAP
+        spine_x = x_cursor + SPINE_INSET
+        last_segment_centre = 0
         if open_here:
             for interface in segments:
                 segment_id = f"{firewall.enclave}:{interface.ifname}"
@@ -399,9 +421,9 @@ def layout(
                         kind="segment",
                         label=interface.role,
                         sublabel=f"{interface.ifname}  {address}",
-                        x=x_cursor + GAP // 2,
+                        x=x_cursor + SPINE_INSET + 12,
                         y=inner_y,
-                        width=width - GAP,
+                        width=width - SPINE_INSET - 12 - GAP // 2,
                         height=CARD_HEIGHT,
                         accent="warn" if interface.role.startswith("other:") else "line",
                         href=view.link_for(segment_id, slug) if slug else "",
@@ -409,14 +431,19 @@ def layout(
                         + (f" · {len(on_it)} hosts" if on_it else " · no hosts"),
                     )
                 )
+                # A stub from the spine to this interface, not a line from the one
+                # above it — every segment hangs off the firewall, not off its
+                # neighbour.
                 diagram.links.append(
                     Link(
-                        x_cursor + width // 2,
-                        row_y + CARD_HEIGHT,
-                        x_cursor + width // 2,
-                        inner_y,
+                        spine_x,
+                        inner_y + CARD_HEIGHT // 2,
+                        x_cursor + SPINE_INSET + 12,
+                        inner_y + CARD_HEIGHT // 2,
+                        shape="line",
                     )
                 )
+                last_segment_centre = inner_y + CARD_HEIGHT // 2
                 inner_y += CARD_HEIGHT + GAP // 2
 
                 if segment_open and on_it:
@@ -429,7 +456,7 @@ def layout(
                                 kind="host",
                                 label=host.hostname,
                                 sublabel=host.os or "no OS declared",
-                                x=x_cursor + GAP + column * (HOST_WIDTH + 10),
+                                x=x_cursor + SPINE_INSET + 20 + column * (HOST_WIDTH + 10),
                                 y=inner_y + row * (HOST_HEIGHT + 8),
                                 width=HOST_WIDTH,
                                 height=HOST_HEIGHT,
@@ -444,6 +471,12 @@ def layout(
                         )
                     rows = (len(on_it) + HOSTS_PER_ROW - 1) // HOSTS_PER_ROW
                     inner_y += rows * (HOST_HEIGHT + 8) + GAP // 2
+
+        if last_segment_centre:
+            # The spine itself, dropping from the firewall.
+            diagram.links.append(
+                Link(spine_x, row_y + CARD_HEIGHT, spine_x, last_segment_centre, shape="line")
+            )
 
         tallest = max(tallest, inner_y - row_y)
         x_cursor += width + GAP
@@ -507,6 +540,12 @@ def render_svg(diagram: Diagram) -> str:
         'role="img" aria-label="estate topology">'
     ]
     for link in diagram.links:
+        if link.shape == "line":
+            parts.append(
+                f'<path class="link" d="M {link.x1} {link.y1} L {link.x2} {link.y2}" '
+                'fill="none"/>'
+            )
+            continue
         middle = (link.y1 + link.y2) // 2
         parts.append(
             f'<path class="link" d="M {link.x1} {link.y1} V {middle} H {link.x2} '

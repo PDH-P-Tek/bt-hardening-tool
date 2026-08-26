@@ -90,6 +90,16 @@ class Interface:
     is_lan: bool = False
     """The interface anti-lockout binds to."""
 
+    upstreams: tuple[str, ...] = ()
+    """Names of the devices this interface connects to — usually the routers a WAN
+    peers with.
+
+    Declared, not inferred. Drawing a line from every firewall to every router looks
+    like knowledge and is a guess: which router an enclave actually peers with decides
+    whether a routing rule covers the adjacency it needs, and the tool has no business
+    inventing that. An interface with none declared is drawn unconnected, which is
+    visible and therefore fixable."""
+
 
 @dataclass(frozen=True, slots=True)
 class Host:
