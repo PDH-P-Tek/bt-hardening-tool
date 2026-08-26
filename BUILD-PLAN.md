@@ -18,7 +18,10 @@ Status: **Phase 0 complete.** Phase 1 next — parse and identity.
    they get designed twice and disagree — `MONITORING.md` §11.
 2. **Fingerprinting before UI.** A brittle fingerprint makes the tool worse than
    nothing, and a UI will not reveal that. Property tests gate Phase 2 — `SPEC.md` §11.
-3. **Each phase ends somewhere useful.** Stop at the end of any phase and what exists
+3. **The topology is a view, not an editor.** It is drawn from the declared estate and
+   never becomes a second place the estate can be defined. No drag-to-edit: if node
+   positions ever need tuning, they are overrides stored in the estate file.
+4. **Each phase ends somewhere useful.** Stop at the end of any phase and what exists
    still earns its keep. The two lines worth knowing: the generator is usable at the
    end of **Phase 3**, and the monitor at the end of **Phase 5**.
 
@@ -67,10 +70,11 @@ it answers "what am I actually looking at" before any policy exists.
 | # | Step | Source | Done when |
 |---|---|---|---|
 | 2.1 | **Estate setup.** Declare the estate: enclaves and their names, each device and its platform, management addresses, interfaces and what each segment is for, what the hosts run. Establishes the role vocabulary | §4, §5.1 | An estate exists that the operator named end to end. **This is the same inventory 5.1 polls** — captured once |
-| 2.2 | Estate policy schema and loader — the durable artefact | §4, §9 | Round-trips YAML; human-editable and diffable |
-| 2.3 | Wizard, interface by interface, **typed input only** | §5.1 | Every step completable without pasting anything |
-| 2.4 | Annex paste-parse as a shortcut inside wizard steps | §5.2 | Both annex table shapes parse; **the parse renders back for confirmation** |
-| 2.5 | ISA check assignment and service catalogue | §5.3 | Every host carries its check set; unscored hosts flagged for confirmation |
+| 2.2 | **Topology view.** The declared estate drawn as inline SVG — enclaves, routers, firewalls, segments. Click a node for its detail. Deterministic tiered layout, no library | §4 | Same estate renders the same picture; a setup error is visible in it. **5.4 reuses it** with live status |
+| 2.3 | Estate policy schema and loader — the durable artefact | §4, §9 | Round-trips YAML; human-editable and diffable |
+| 2.4 | Wizard, interface by interface, **typed input only** | §5.1 | Every step completable without pasting anything |
+| 2.5 | Annex paste-parse as a shortcut inside wizard steps | §5.2 | Both annex table shapes parse; **the parse renders back for confirmation** |
+| 2.6 | ISA check assignment and service catalogue | §5.3 | Every host carries its check set; unscored hosts flagged for confirmation |
 
 ---
 
@@ -117,7 +121,7 @@ and 1.3, nothing from the generator's front half.
 | 5.1 | Inventory, credential store, SSH transport, heartbeat | §10.1 | "Are all my boxes up, is my access intact" answerable |
 | 5.2 | Linux adapter — accounts, keys, sudo, cron | §5.1–5.3 | Easiest platform to test off-range; hits the DCM26 pattern directly |
 | 5.3 | **Diff engine, item identity, review state** | §3.4 | Accept / flag / suppress work **per item**. Accepting one change does not resurface nine others |
-| 5.4 | Estate / host / item dashboard | §8.2 | First point the monitor is genuinely usable |
+| 5.4 | Estate / host / item dashboard — **the 2.2 topology with live status on it** | §8.2 | First point the monitor is genuinely usable. A host that stops answering is visible as a shape, not a log line |
 
 > 5.3 is the product, not the plumbing. Prove it on one adapter before adding more.
 > **Config is diffed, state is never diffed** (§3.3) — the rule that decides whether this
