@@ -12,6 +12,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 ISA_CHECKS = REPO_ROOT / "isa-checks.yaml"
 SERVICE_CATALOGUE = REPO_ROOT / "service-catalogue.yaml"
 SEED_PROFILE = REPO_ROOT / "seed-profile.yaml"
+SEGMENT_TYPES = REPO_ROOT / "segment-types.yaml"
 ENCLAVE_TEMPLATES = REPO_ROOT / "templates"
 
 #: Per-team policy files. Working data, never committed.

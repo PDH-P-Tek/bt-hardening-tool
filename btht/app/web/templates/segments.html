@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block body %}
+<h1>Segment types</h1>
+<p class="sub">The kinds of network segment this range has. Each firewall interface is
+assigned one, and rules are written about the segment rather than the interface.</p>
+
+<div class="panel">
+<table>
+  <tr><th>name</th><th>what it is</th><th>assigned to</th><th></th></tr>
+  {% for t in types %}
+  <tr>
+    <td><span class="tag">{{ t.name }}</span>{% if t.custom %} <span class="sub">yours</span>{% endif %}</td>
+    <td>{{ t.descr }}</td>
+    <td class="sub">{{ in_use.get(t.name, [])|join(", ") or "nothing yet" }}</td>
+    <td>
+      <form method="post" action="/segments/{{ t.name }}/delete"
+            onsubmit="return confirm('Remove {{ t.name }} from this range?')">
+        <button class="btn small danger" type="submit">Remove</button>
+      </form>
+    </td>
+  </tr>
+  {% endfor %}
+</table>
+</div>
+
+<div class="panel">
+<h2>Add a segment type</h2>
+<form method="post" action="/segments">
+  <div class="row">
+    <div><label>name</label><input name="name" placeholder="medical" required></div>
+    <div><label>what it is</label><input name="descr" placeholder="Medical systems"></div>
+  </div>
+  <button class="btn" type="submit">Add segment type</button>
+</form>
+</div>
+{% endblock %}

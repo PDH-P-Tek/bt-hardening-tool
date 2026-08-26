@@ -126,6 +126,7 @@ def _firewall(enclave_name: str, data: dict[str, Any]) -> Firewall:
     node_data.setdefault("name", data.get("fqdn", enclave_name))
     return Firewall(
         enclave=enclave_name,
+        display_name=str(data.get("display_name", "")),
         fqdn=str(data.get("fqdn", "")),
         node=_node(node_data, enclave=enclave_name),
         side=str(data.get("side", "")),
@@ -292,6 +293,8 @@ def estate_to_document(
     for firewall in estate.firewalls:
         entry = by_enclave.setdefault(firewall.enclave, {"name": firewall.enclave})
         fw: dict[str, Any] = {"fqdn": firewall.fqdn, "node": _node_out(firewall.node)}
+        if firewall.display_name:
+            fw["display_name"] = firewall.display_name
         if firewall.side:
             fw["side"] = firewall.side
         if firewall.config_version:
@@ -364,12 +367,33 @@ def interface_from_parsed(ifname: str, role: str, raw: Any) -> Interface:
     )
 
 
+class BadAddress(Exception):
+    """What was typed is not an address. Says what was expected."""
+
+
 def parse_address(text: str) -> Any:
-    """Accept either a bare address or one with a prefix, as a person would type it."""
-    raw = text.strip()
+    """Accept an address, with or without a prefix, as a person would type it.
+
+    Forgiving about whitespace — `10.0.0.0 /25` is a slip, not a different intention —
+    and unforgiving about everything else, with a message naming the form expected.
+    Letting a malformed address through produces rules against an address that does not
+    exist, which generates cleanly and protects nothing.
+    """
+    raw = " ".join(text.split()).replace(" /", "/").replace("/ ", "/")
     if not raw:
         return None
-    return ip_interface(raw) if "/" in raw else ip_address(raw)
+    if "\\" in raw:
+        raise BadAddress(
+            f"{text!r} uses a backslash. Prefixes are written with a forward slash, "
+            "as in 10.0.0.0/25."
+        )
+    try:
+        return ip_interface(raw) if "/" in raw else ip_address(raw)
+    except ValueError as exc:
+        raise BadAddress(
+            f"{text!r} is not an address. Expected something like 25.42.10.1 or "
+            f"25.42.10.1/24 ({exc})."
+        ) from exc
 
 
 # ===========================================================================

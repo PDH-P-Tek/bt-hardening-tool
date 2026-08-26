@@ -1,0 +1,62 @@
+{# Shared form rendering — Phase 9.7.
+
+   One definition of how a field looks, used by every add and every edit. The fields
+   themselves come from `web/forms.py`, so a form is described once and rendered the
+   same way wherever it appears. Before this the same form existed twice and the two
+   drifted: the add form had tick boxes where the edit form still had a text box.
+#}
+
+{% macro fields(items) %}
+  {% for field in items %}
+    <label for="f-{{ field.name }}">{{ field.label }}</label>
+    {% if field.checkboxes is defined %}
+      <div class="checkgroup">
+        {% for option in field.checkboxes %}
+        <label class="check">
+          <input type="checkbox" name="{{ field.name }}" value="{{ option }}"
+                 {% if option in field.value %}checked{% endif %}> {{ option }}
+        </label>
+        {% endfor %}
+        {% if not field.checkboxes %}<span class="sub">None declared yet.</span>{% endif %}
+      </div>
+    {% elif field.options is defined %}
+      <select id="f-{{ field.name }}" name="{{ field.name }}">
+        {% for option in field.options %}
+        <option value="{{ option }}" {% if option == field.value %}selected{% endif %}>
+          {{ option or "—" }}</option>
+        {% endfor %}
+        {% if field.value and field.value not in field.options %}
+        <option value="{{ field.value }}" selected>{{ field.value }}</option>
+        {% endif %}
+      </select>
+    {% else %}
+      <input id="f-{{ field.name }}" name="{{ field.name }}" value="{{ field.value }}"
+             {% if field.placeholder %}placeholder="{{ field.placeholder }}"{% endif %}>
+    {% endif %}
+    {% if field.hint %}<div class="sub hint">{{ field.hint }}</div>{% endif %}
+  {% endfor %}
+{% endmacro %}
+
+{# A pop-out. The form inside posts normally, so it works whatever the browser does
+   with dialog support — the fallback is a visible panel rather than a broken page. #}
+{% macro dialog(id, title, action, items, submit="Save", delete_action="", delete_note="") %}
+<dialog id="{{ id }}" class="popout">
+  <form method="dialog" class="popout-close"><button aria-label="Close">✕</button></form>
+  <h2>{{ title }}</h2>
+  <form method="post" action="{{ action }}">
+    {{ fields(items) }}
+    <button class="btn" type="submit">{{ submit }}</button>
+  </form>
+  {% if delete_action %}
+  <form method="post" action="{{ delete_action }}" class="popout-remove"
+        onsubmit="return confirm('Remove this? The check runs first, so it may be refused.')">
+    <button class="btn danger" type="submit">Remove</button>
+    {% if delete_note %}<div class="sub hint">{{ delete_note }}</div>{% endif %}
+  </form>
+  {% endif %}
+</dialog>
+{% endmacro %}
+
+{% macro opener(id, label, classes="btn small quiet") %}
+<button type="button" class="{{ classes }}" data-opens="{{ id }}">{{ label }}</button>
+{% endmacro %}

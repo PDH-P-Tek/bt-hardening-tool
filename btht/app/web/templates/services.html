@@ -2,8 +2,8 @@
 {% set page = "services" %}
 {% block body %}
 <h1>Services and host types</h1>
-<p class="sub">Services define which ports a machine needs open. Host templates group
-them, so picking a template opens the right set.</p>
+<p class="sub">Each service is a name and the ports it needs. Host templates group them
+into kinds of machine.</p>
 
 <div class="panel">
 <h2>Services — {{ services|length }}</h2>
@@ -49,33 +49,4 @@ them, so picking a template opens the right set.</p>
 </form>
 </div>
 
-<div class="panel">
-<h2 id="types">Host types — {{ host_types|length }}</h2>
-<table>
-  <tr><th>type</th><th>default OS</th><th>services</th><th></th></tr>
-  {% for t in host_types %}
-  <tr>
-    <td>{{ t.name }}{% if t.custom %} <span class="tag">yours</span>{% endif %}</td>
-    <td>{{ t.default_os }}</td>
-    <td class="sub">{{ t.services|join(", ") }}</td>
-    <td><a class="btn small quiet" href="/services/types/edit/{{ t.name|urlencode }}">Edit</a></td>
-  </tr>
-  {% endfor %}
-</table>
-</div>
-
-<div class="panel">
-<h2>Add a host type</h2>
-<form method="post" action="/services/types/new">
-  <div class="row">
-    <div><label>name</label><input name="name" placeholder="uav_ground_station" required></div>
-    <div><label>default operating system</label><input name="default_os"></div>
-  </div>
-  <label>services it runs, comma separated</label>
-  <input name="services" placeholder="SSH, HTTPS">
-  <div class="sub" style="margin-top:4px">known: {{ service_names|join(", ") }}</div>
-  <label>description</label><input name="descr">
-  <button class="btn" type="submit">Add host type</button>
-</form>
-</div>
 {% endblock %}

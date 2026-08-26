@@ -198,7 +198,7 @@ def test_a_mistyped_interface_can_be_corrected_in_the_ui(
         "/range/edit/interface/alpha/opt1",
         data={
             "ifname": "opt1",
-            "role": "servers",
+            "role": "dmz",
             "v4": "192.0.9.1/24",
             "v6": "",
             "descr": "fixed",
@@ -208,8 +208,54 @@ def test_a_mistyped_interface_can_be_corrected_in_the_ui(
     assert response.status_code == 303
     estate = load_estate(tmp_path / "estates" / "range.yaml")
     interface = estate.firewalls[0].interfaces[0]
-    assert interface.role == "servers"
+    assert interface.role == "dmz"
     assert str(interface.v4) == "192.0.9.1/24"
+
+
+def test_a_segment_outside_the_declared_list_is_refused(client: TestClient) -> None:
+    """Free text lets the same segment be spelled two ways and mean two things."""
+    with_an_enclave(client)
+    response = client.post(
+        "/range/edit/interface/alpha/opt1",
+        data={"ifname": "opt1", "role": "servers"},
+        follow_redirects=False,
+    )
+    from urllib.parse import unquote
+
+    assert "not one of this range" in unquote(response.headers["location"])
+
+
+@pytest.mark.parametrize(
+    "bad",
+    ["10.0.0.0 \\25", "not-an-address", "999.1.1.1/24", "10.0.0.0/99"],
+)
+def test_a_malformed_address_is_reported_rather_than_crashing(client: TestClient, bad: str) -> None:
+    """A malformed address let through produces rules against something that does not
+    exist: it generates cleanly and protects nothing."""
+    with_an_enclave(client)
+    response = client.post(
+        "/range/enclaves/alpha/interfaces",
+        data={"ifname": "opt9", "role": "dmz", "v4": bad},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    from urllib.parse import unquote
+
+    told = unquote(response.headers["location"])
+    assert "not an address" in told or "backslash" in told
+    assert "/24" in told or "/25" in told, "and it shows the form it wanted"
+
+
+def test_a_spacing_slip_in_an_address_is_forgiven(client: TestClient, tmp_path: Path) -> None:
+    """`10.0.0.0 /25` is a slip, not a different intention."""
+    with_an_enclave(client)
+    client.post(
+        "/range/enclaves/alpha/interfaces",
+        data={"ifname": "opt9", "role": "dmz", "v4": "192.0.8.1 /24"},
+        follow_redirects=False,
+    )
+    interfaces = load_estate(tmp_path / "estates" / "range.yaml").firewalls[0].interfaces
+    assert str(interfaces[-1].v4) == "192.0.8.1/24"
 
 
 def test_an_interface_with_hosts_on_it_is_refused_and_says_why(
@@ -287,15 +333,38 @@ def test_the_range_page_drills_down_one_level_at_a_time(client: TestClient) -> N
     assert "Add many of one kind" in interface
 
 
-def test_the_add_form_matches_the_level_being_viewed(client: TestClient) -> None:
-    """Adding an interface is not offered while looking at hosts, and vice versa."""
-    with_an_enclave(client)
-    hosts_level = client.get("/range?enclave=alpha&interface=opt1").text
-    assert "Add one machine" in hosts_level
-    assert "Add an interface to alpha" not in hosts_level
+def test_the_add_controls_match_the_level_being_viewed(client: TestClient) -> None:
+    """Forms are pop-outs, so what matters is which openers the page offers.
 
-    interfaces_level = client.get("/range?enclave=alpha&interface=__new").text
-    assert "Add an interface to alpha" in interfaces_level
+    The interface form exists once an enclave is open; the machine forms exist once a
+    segment is. Neither is offered before there is anything to attach it to.
+    """
+    with_an_enclave(client)
+
+    top = client.get("/range").text
+    assert 'data-opens="add-enclave"' in top
+    assert 'data-opens="add-interface"' not in top, "nothing to add an interface to yet"
+
+    enclave = client.get("/range?enclave=alpha").text
+    assert 'data-opens="add-interface"' in enclave
+    assert 'data-opens="add-host"' not in enclave, "no segment chosen yet"
+
+    segment = client.get("/range?enclave=alpha&interface=opt1").text
+    assert 'data-opens="add-host"' in segment
+    assert 'data-opens="add-group"' in segment
+
+
+def test_editing_opens_the_same_form_pre_filled(client: TestClient) -> None:
+    """One definition of the form, used to add and to edit.
+
+    Before this the two were written separately and drifted: the add form had tick
+    boxes where the edit form still had a comma-separated text box for the same value.
+    """
+    with_an_enclave(client)
+    body = client.get("/range?enclave=alpha").text
+    assert 'data-opens="edit-if-opt1"' in body, "an opener for the thing being edited"
+    assert 'id="edit-if-opt1"' in body, "and the form itself, pre-filled"
+    assert 'action="/range/edit/interface/alpha/opt1"' in body
 
 
 def test_a_machine_can_be_typed_in_without_pasting_an_annex(
@@ -374,8 +443,11 @@ def test_a_router_is_declared_without_being_asked_its_platform(
     assert router.platform.value == "frr"
 
     body = client.get("/range?routers=1").text
+    dialog = body[
+        body.index('id="add-router"') : body.index("</dialog>", body.index('id="add-router"'))
+    ]
     assert "Add a router" in body
-    assert "pfsense" not in body, "no platform to choose from"
+    assert 'name="platform"' not in dialog, "no platform to choose from"
 
 
 def test_an_interface_declares_which_routers_it_peers_with(
@@ -383,7 +455,8 @@ def test_an_interface_declares_which_routers_it_peers_with(
 ) -> None:
     with_an_enclave(client)
     client.post(
-        "/range/routers", data={"name": "r1", "mgmt_address": "25.42.0.1"},
+        "/range/routers",
+        data={"name": "r1", "mgmt_address": "25.42.0.1"},
         follow_redirects=False,
     )
     client.post(
@@ -398,7 +471,8 @@ def test_an_interface_declares_which_routers_it_peers_with(
 def test_a_router_something_still_peers_with_is_not_removed(client: TestClient) -> None:
     with_an_enclave(client)
     client.post(
-        "/range/routers", data={"name": "r1", "mgmt_address": "25.42.0.1"},
+        "/range/routers",
+        data={"name": "r1", "mgmt_address": "25.42.0.1"},
         follow_redirects=False,
     )
     client.post(

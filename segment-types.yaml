@@ -1,0 +1,24 @@
+# BT Hardening Tool — segment types
+#
+# The kinds of network segment a range has. Shipped as defaults so nobody starts from
+# an empty box; every one can be renamed, removed or added to.
+#
+# These are deliberately not pfSense interface names. `lan` is workstations on most
+# enclaves and servers on at least one, so the segment a rule is *about* has to be
+# named separately from the interface it happens to sit on.
+
+version: 1
+
+segment_types:
+  wan:    { descr: "The link out of the enclave, towards the routers" }
+  ws:     { descr: "User workstations" }
+  svrs:   { descr: "Servers" }
+  dmz:    { descr: "Services reachable from outside the enclave" }
+  uav:    { descr: "Uncrewed air systems: ground station and airframe" }
+  scada:  { descr: "Industrial control and OT" }
+  power:  { descr: "Power generation and distribution" }
+  sat:    { descr: "Satellite communications" }
+  port1:  { descr: "Port-side zone 1" }
+  port2:  { descr: "Port-side zone 2" }
+  stbd1:  { descr: "Starboard-side zone 1" }
+  stbd2:  { descr: "Starboard-side zone 2" }

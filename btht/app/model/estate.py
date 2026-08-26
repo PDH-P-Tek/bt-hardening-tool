@@ -139,11 +139,15 @@ class Firewall:
     """A node the generator also holds a ruleset for."""
 
     enclave: str
-    """The operator's name for this enclave, from estate setup. Free-form: the tool
-    has no list of valid enclaves and must never acquire one."""
+    """The short code, as it appears in the FQDN and in generated rule descriptions —
+    `do`. Free-form: the tool has no list of valid enclaves and must never acquire one."""
 
     fqdn: str
     node: Node
+    display_name: str = ""
+    """What the enclave is actually called — `Deployed Official`. Shown wherever there
+    is room; the short code is what appears in a rule description, where there is not."""
+
     side: str = ""
     """Operator-declared grouping label, where an estate has one.
 

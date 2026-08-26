@@ -18,7 +18,7 @@ from fastapi import APIRouter, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
-from btht.app.data import ESTATES, ISA_CHECKS, SERVICE_CATALOGUE
+from btht.app.data import ESTATES, ISA_CHECKS, SEGMENT_TYPES, SERVICE_CATALOGUE
 from btht.app.generate.diff import Gate, diff_rulesets, gate_for
 from btht.app.generate.emit import checklist
 from btht.app.generate.order import GenerationRefused, generate
@@ -52,6 +52,7 @@ from btht.app.model.estate import (
     SourceOfTruth,
 )
 from btht.app.model.policy import (
+    BadAddress,
     EgressPolicy,
     EstateFileError,
     FirewallPolicy,
@@ -67,6 +68,11 @@ from btht.app.model.policy import (
     side_rules_of,
     validate_policy,
 )
+from btht.app.model.segments import (
+    SegmentType,
+    load_segment_types,
+    save_segment_types,
+)
 from btht.app.model.services import (
     Catalogue,
     Confidence,
@@ -80,6 +86,7 @@ from btht.app.model.services import (
     save_catalogue as save_services,
 )
 from btht.app.validate.rules import Context, Severity, run_all
+from btht.app.web import forms
 from btht.app.web.topology import View, layout, render_svg
 
 TEMPLATES = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
@@ -157,7 +164,23 @@ def _range_page(
         hosts=hosts,
         groups=groups,
         host_types=sorted(catalogue.host_types),
+        service_names=sorted(catalogue.services),
         enclave_tokens=convention_of(path).enclave_tokens,
+        # Field lists come from one place, so the pop-out that adds a thing and the
+        # pop-out that edits it can never drift apart.
+        new_enclave_fields=forms.enclave_fields([p.value for p in Platform]),
+        new_router_fields=forms.router_fields(),
+        new_interface_fields=forms.interface_fields(estate),
+        new_host_fields=forms.host_fields(catalogue, segment=interface.role if interface else ""),
+        new_group_fields=forms.group_fields(catalogue, segment=interface.role if interface else ""),
+        edit_interface_fields={
+            i.ifname: forms.interface_fields(estate, i)
+            for i in (firewall.interfaces if firewall else ())
+        },
+        edit_host_fields={h.hostname: forms.host_fields(catalogue, h) for h in hosts},
+        edit_group_fields={g.name_prefix: forms.group_fields(catalogue, g) for g in groups},
+        edit_router_fields={n.name: forms.router_fields(n) for n in estate.nodes},
+        edit_enclave_fields=forms.enclave_fields([], firewall) if firewall else [],
         messages=messages
         or (
             [(request.query_params.get("k", "ok"), request.query_params["m"])]
@@ -176,11 +199,12 @@ def create_estate(
     tokens: str = Form(""),
 ) -> RedirectResponse:
     path = estate_path()
+    declared = _split(vocabulary) or tuple(sorted(load_segment_types(SEGMENT_TYPES)))
     estate = Estate(
         team=team,
         team_name=team_name.strip(),
         team_padded=team_padded.strip(),
-        role_vocabulary=_split(vocabulary),
+        role_vocabulary=declared,
     )
     save_estate(estate, path, enclave_tokens=_split(tokens))
     return RedirectResponse("/range", status_code=303)
@@ -197,6 +221,7 @@ def show_range(request: Request) -> HTMLResponse:
 @router.post("/range/enclaves")
 def add_enclave(
     name: str = Form(...),
+    display_name: str = Form(""),
     fqdn: str = Form(""),
     platform: str = Form("pfsense"),
     mgmt_address: str = Form(...),
@@ -211,7 +236,12 @@ def add_enclave(
         credential_ref=credential_ref.strip(),
         enclave=name.strip(),
     )
-    firewall = Firewall(enclave=name.strip(), fqdn=fqdn.strip(), node=node)
+    firewall = Firewall(
+        enclave=name.strip(),
+        display_name=display_name.strip(),
+        fqdn=fqdn.strip(),
+        node=node,
+    )
     estate = replace(estate, firewalls=(*estate.firewalls, firewall))
     save_estate(estate, path, convention_of(path).enclave_tokens, side_rules_of(path))
     return RedirectResponse("/range", status_code=303)
@@ -231,12 +261,25 @@ def add_interface(
 
     path = estate_path()
     estate = load_estate(path)
+    estate = load_estate(path)
+    if role.strip() and not estate.knows_role(role.strip()):
+        return _back(
+            f"{role.strip()!r} is not one of this range's segment types. Add it in "
+            "range settings first, so the same segment is not spelled two ways.",
+            "err",
+            where=f"enclave={enclave}&interface=__new",
+        )
+    try:
+        addresses = _addresses(v4=v4, v6=v6)
+    except BadAddress as exc:
+        return _back(str(exc), "err", where=f"enclave={enclave}&interface=__new")
+
     interface = Interface(
         ifname=ifname.strip(),
         role=role.strip(),
         descr=descr.strip(),
-        v4=parse_address(v4),
-        v6=parse_address(v6),
+        v4=addresses["v4"],
+        v6=addresses["v6"],
         is_lan=ifname.strip() == "lan",
         upstreams=tuple(u for u in upstreams if u),
     )
@@ -716,6 +759,17 @@ def _save(estate: Estate, path: Path) -> None:
     save_estate(estate, path, convention_of(path).enclave_tokens, side_rules_of(path))
 
 
+def _addresses(**fields: str) -> dict[str, Any]:
+    """Parse several address fields, or raise the first problem with its field named."""
+    out: dict[str, Any] = {}
+    for name, text in fields.items():
+        try:
+            out[name] = parse_address(text)
+        except BadAddress as exc:
+            raise BadAddress(f"{name}: {exc}") from exc
+    return out
+
+
 def _back(message: str = "", kind: str = "ok", where: str = "") -> RedirectResponse:
     parts = [where] if where else []
     if message:
@@ -742,25 +796,7 @@ def edit_interface_form(request: Request, enclave: str, ifname: str) -> HTMLResp
         action=f"/range/edit/interface/{enclave}/{ifname}",
         delete_action=f"/range/delete/interface/{enclave}/{ifname}",
         delete_warning="Refused while hosts still sit on this segment.",
-        fields=[
-            {
-                "name": "ifname",
-                "label": "ifname (what pfSense calls it)",
-                "value": interface.ifname,
-            },
-            {"name": "role", "label": "segment role (what you call it)", "value": interface.role},
-            {"name": "v4", "label": "IPv4 with prefix", "value": str(interface.v4 or "")},
-            {"name": "v6", "label": "IPv6 with prefix", "value": str(interface.v6 or "")},
-            {"name": "descr", "label": "description", "value": interface.descr},
-            {
-                "name": "upstreams",
-                "label": "peers with, comma separated",
-                "value": ", ".join(interface.upstreams),
-                "hint": "Which routers this interface peers with, normally set on the "
-                "WAN. Declared routers: "
-                + (", ".join(sorted(n.name for n in load_estate(path).nodes)) or "none yet"),
-            },
-        ],
+        fields=forms.interface_fields(estate, interface),
     )
 
 
@@ -773,21 +809,32 @@ def edit_interface(
     v4: str = Form(""),
     v6: str = Form(""),
     descr: str = Form(""),
-    upstreams: str = Form(""),
+    upstreams: list[str] = Form(default=[]),
 ) -> RedirectResponse:
     path = estate_path()
     renamed = new_ifname.strip() or ifname
+    estate = load_estate(path)
+    if role.strip() and not estate.knows_role(role.strip()):
+        return _back(
+            f"{role.strip()!r} is not one of this range's segment types. Add it in "
+            "range settings first.",
+            "err",
+        )
+    try:
+        addresses = _addresses(v4=v4, v6=v6)
+    except BadAddress as exc:
+        return _back(str(exc), "err")
     changes: dict[str, object] = {
         "role": role.strip(),
-        "v4": parse_address(v4),
-        "v6": parse_address(v6),
+        "v4": addresses["v4"],
+        "v6": addresses["v6"],
         "descr": descr.strip(),
         "is_lan": renamed == "lan",
-        "upstreams": _split(upstreams),
+        "upstreams": tuple(u for u in upstreams if u),
     }
     if renamed != ifname:
         changes["ifname"] = renamed
-    estate = update_interface(load_estate(path), enclave, ifname, **changes)
+    estate = update_interface(estate, enclave, ifname, **changes)
     _save(estate, path)
     return _back(f"interface {ifname} updated")
 
@@ -818,32 +865,7 @@ def edit_host_form(request: Request, enclave: str, hostname: str) -> HTMLRespons
         title=f"{enclave} · host {hostname}",
         action=f"/range/edit/host/{enclave}/{hostname}",
         delete_action=f"/range/delete/host/{enclave}/{hostname}",
-        fields=[
-            {"name": "hostname", "label": "hostname", "value": host.hostname},
-            {"name": "os", "label": "operating system", "value": host.os},
-            {"name": "v4", "label": "IPv4", "value": str(host.v4 or "")},
-            {"name": "v6", "label": "IPv6", "value": str(host.v6 or "")},
-            {"name": "segment_role", "label": "segment", "value": host.segment_role},
-            {
-                "name": "service_role",
-                "label": "host type",
-                "value": host.service_role,
-                "options": sorted(catalogue.host_types),
-            },
-            {
-                "name": "services",
-                "label": "services it runs, comma separated",
-                "value": ", ".join(host.services),
-                "hint": "known: " + ", ".join(sorted(catalogue.services)[:12]) + "…",
-            },
-            {
-                "name": "out_of_bounds",
-                "label": "out of bounds",
-                "value": "yes" if host.out_of_bounds else "",
-                "options": ["", "yes"],
-                "hint": "Out-of-bounds hosts must keep working and are never policy targets.",
-            },
-        ],
+        fields=forms.host_fields(catalogue, host),
     )
 
 
@@ -857,18 +879,22 @@ def edit_host(
     v6: str = Form(""),
     segment_role: str = Form(""),
     service_role: str = Form(""),
-    services: str = Form(""),
+    services: list[str] = Form(default=[]),
     out_of_bounds: str = Form(""),
 ) -> RedirectResponse:
     path = estate_path()
     renamed = new_hostname.strip() or hostname
+    try:
+        addresses = _addresses(v4=v4, v6=v6)
+    except BadAddress as exc:
+        return _back(str(exc), "err")
     changes: dict[str, object] = {
         "os": os.strip(),
-        "v4": parse_address(v4),
-        "v6": parse_address(v6),
+        "v4": addresses["v4"],
+        "v6": addresses["v6"],
         "segment_role": segment_role.strip(),
         "service_role": service_role.strip(),
-        "services": _split(services),
+        "services": tuple(s for s in services if s),
         "out_of_bounds": out_of_bounds == "yes",
     }
     if renamed != hostname:
@@ -906,31 +932,7 @@ def edit_group_form(request: Request, enclave: str, prefix: str) -> HTMLResponse
         action=f"/range/edit/group/{enclave}/{prefix}",
         delete_action=f"/range/delete/group/{enclave}/{prefix}",
         delete_warning=f"This removes all {group.count} machines in the group.",
-        fields=[
-            {"name": "name_prefix", "label": "name prefix", "value": group.name_prefix},
-            {"name": "count", "label": "how many", "value": str(group.count)},
-            {"name": "first_index", "label": "first number", "value": str(group.first_index)},
-            {
-                "name": "index_width",
-                "label": "digits in the number",
-                "value": str(group.index_width),
-            },
-            {"name": "os", "label": "operating system", "value": group.os},
-            {
-                "name": "host_type",
-                "label": "host type",
-                "value": group.host_type,
-                "options": sorted(catalogue.host_types),
-            },
-            {"name": "segment_role", "label": "segment", "value": group.segment_role},
-            {"name": "v4_start", "label": "first IPv4", "value": str(group.v4_start or "")},
-            {"name": "v6_start", "label": "first IPv6", "value": str(group.v6_start or "")},
-            {
-                "name": "services",
-                "label": "services (blank uses the host type's)",
-                "value": ", ".join(group.services),
-            },
-        ],
+        fields=forms.group_fields(catalogue, group),
     )
 
 
@@ -962,11 +964,11 @@ def edit_group(
             os=os.strip(),
             host_type=host_type.strip(),
             segment_role=segment_role.strip(),
-            v4_start=parse_address(v4_start),
-            v6_start=parse_address(v6_start),
+            v4_start=_addresses(v4_start=v4_start)["v4_start"],
+            v6_start=_addresses(v6_start=v6_start)["v6_start"],
             services=_split(services),
         )
-    except ValueError as exc:
+    except (ValueError, BadAddress) as exc:
         return _back(str(exc), "err")
     _save(estate, path)
     return _back(f"group {prefix} updated")
@@ -993,29 +995,7 @@ def edit_enclave_form(request: Request, enclave: str) -> HTMLResponse:
         action=f"/range/edit/enclave/{enclave}",
         delete_action=f"/range/delete/enclave/{enclave}",
         delete_warning="Refused while a declared path still names this enclave.",
-        fields=[
-            {"name": "enclave", "label": "enclave name", "value": firewall.enclave},
-            {"name": "fqdn", "label": "firewall FQDN", "value": firewall.fqdn},
-            {"name": "side", "label": "side label", "value": firewall.side},
-            {
-                "name": "mgmt_address",
-                "label": "management address",
-                "value": str(firewall.node.mgmt_address),
-            },
-            {
-                "name": "gui_url",
-                "label": "management GUI URL",
-                "value": firewall.node.gui_url,
-                "hint": "Blank means no GUI link is offered. A link that does not answer is "
-                "worse than none.",
-            },
-            {"name": "ssh_user", "label": "your SSH username", "value": firewall.node.ssh_user},
-            {
-                "name": "credential_ref",
-                "label": "credential name (never the credential)",
-                "value": firewall.node.credential_ref,
-            },
-        ],
+        fields=forms.enclave_fields([], firewall),
     )
 
 
@@ -1023,6 +1003,7 @@ def edit_enclave_form(request: Request, enclave: str) -> HTMLResponse:
 def edit_enclave(
     enclave: str,
     new_enclave: str = Form("", alias="enclave"),
+    display_name: str = Form(""),
     fqdn: str = Form(""),
     side: str = Form(""),
     mgmt_address: str = Form(""),
@@ -1039,7 +1020,8 @@ def edit_enclave(
         return _back(f"no enclave {enclave}", "err")
     node = dc_replace(
         firewall.node,
-        mgmt_address=parse_address(mgmt_address) or firewall.node.mgmt_address,
+        mgmt_address=_addresses(mgmt_address=mgmt_address)["mgmt_address"]
+        or firewall.node.mgmt_address,
         gui_url=gui_url.strip(),
         ssh_user=ssh_user.strip(),
         credential_ref=credential_ref.strip(),
@@ -1047,6 +1029,7 @@ def edit_enclave(
     )
     changes: dict[str, object] = {
         "fqdn": fqdn.strip(),
+        "display_name": display_name.strip(),
         "side": side.strip(),
         "node": node,
     }
@@ -1152,25 +1135,7 @@ def edit_service_form(request: Request, name: str) -> HTMLResponse:
         action=f"/services/edit/{name}",
         delete_action=f"/services/delete/{name}",
         delete_warning="Refused while any host or host type still runs it.",
-        fields=[
-            {
-                "name": "name",
-                "label": "name",
-                "value": service.name,
-                "hint": "Renaming carries every host and host type that runs it.",
-            },
-            {"name": "tcp", "label": "tcp ports", "value": ", ".join(str(p) for p in service.tcp)},
-            {"name": "udp", "label": "udp ports", "value": ", ".join(str(p) for p in service.udp)},
-            {"name": "tcp_dynamic", "label": "tcp range", "value": service.tcp_dynamic},
-            {
-                "name": "confidence",
-                "label": "confidence",
-                "value": service.confidence.value,
-                "options": ["standard", "assumed", "unverified"],
-            },
-            {"name": "descr", "label": "description", "value": service.descr},
-            {"name": "note", "label": "note", "value": service.note},
-        ],
+        fields=forms.service_fields(service),
     )
 
 
@@ -1236,13 +1201,13 @@ def delete_service(name: str) -> RedirectResponse:
 def add_host_type(
     name: str = Form(...),
     default_os: str = Form(""),
-    services: str = Form(""),
+    services: list[str] = Form(default=[]),
     descr: str = Form(""),
 ) -> RedirectResponse:
     catalogue = load_services(SERVICE_CATALOGUE)
     host_type = HostType(
         name=name.strip(),
-        services=_split(services),
+        services=tuple(s for s in services if s),
         default_os=default_os.strip(),
         descr=descr.strip(),
         custom=True,
@@ -1273,21 +1238,7 @@ def edit_host_type_form(request: Request, name: str) -> HTMLResponse:
         action=f"/services/types/edit/{name}",
         delete_action=f"/services/types/delete/{name}",
         delete_warning="Refused while any host or group still uses it.",
-        fields=[
-            {"name": "name", "label": "name", "value": host_type.name},
-            {
-                "name": "default_os",
-                "label": "default operating system",
-                "value": host_type.default_os,
-            },
-            {
-                "name": "services",
-                "label": "services",
-                "value": ", ".join(host_type.services),
-                "hint": "known: " + ", ".join(sorted(catalogue.services)),
-            },
-            {"name": "descr", "label": "description", "value": host_type.descr},
-        ],
+        fields=forms.host_type_fields(catalogue, host_type),
     )
 
 
@@ -1296,14 +1247,14 @@ def edit_host_type(
     name: str,
     new_name: str = Form("", alias="name"),
     default_os: str = Form(""),
-    services: str = Form(""),
+    services: list[str] = Form(default=[]),
     descr: str = Form(""),
 ) -> RedirectResponse:
     catalogue = load_services(SERVICE_CATALOGUE)
     existing = catalogue.host_types.get(name)
     host_type = HostType(
         name=new_name.strip() or name,
-        services=_split(services),
+        services=tuple(s for s in services if s),
         default_os=default_os.strip(),
         descr=descr.strip(),
         custom=existing.custom if existing else True,
@@ -1371,7 +1322,7 @@ def add_host(
     v6: str = Form(""),
     segment_role: str = Form(""),
     host_type: str = Form(""),
-    services: str = Form(""),
+    services: list[str] = Form(default=[]),
     out_of_bounds: str = Form(""),
     ifname: str = Form(""),
 ) -> RedirectResponse:
@@ -1381,16 +1332,21 @@ def add_host(
     path = estate_path()
     estate = load_estate(path)
     catalogue = load_services(SERVICE_CATALOGUE)
-    chosen = _split(services)
+    chosen = tuple(s for s in services if s)
     if not chosen and host_type:
         host_type_entry = catalogue.host_types.get(host_type)
         chosen = tuple(host_type_entry.services) if host_type_entry else ()
 
+    try:
+        addresses = _addresses(v4=v4, v6=v6)
+    except BadAddress as exc:
+        return _back(str(exc), "err", where=f"enclave={enclave}&interface={ifname}")
+
     host = Host(
         hostname=hostname.strip(),
         os=os.strip(),
-        v4=parse_address(v4),
-        v6=parse_address(v6),
+        v4=addresses["v4"],
+        v6=addresses["v6"],
         segment_role=segment_role.strip(),
         service_role=host_type.strip(),
         services=chosen,
@@ -1435,10 +1391,10 @@ def add_group(
             os=os.strip(),
             host_type=host_type.strip(),
             segment_role=segment_role.strip(),
-            v4_start=parse_address(v4_start),
+            v4_start=_addresses(v4_start=v4_start)["v4_start"],
             v6_prefix=v6_prefix.strip(),
         )
-    except ValueError as exc:
+    except (ValueError, BadAddress) as exc:
         return _back(str(exc), "err", where=f"enclave={enclave}&interface={ifname}")
 
     estate = load_estate(path)
@@ -1478,13 +1434,13 @@ def add_router(
         node = Node(
             name=name.strip(),
             platform=Platform.FRR,
-            mgmt_address=parse_address(mgmt_address),
+            mgmt_address=_addresses(mgmt_address=mgmt_address)["mgmt_address"],
             ssh_user=ssh_user.strip(),
             gui_url=gui_url.strip(),
             credential_ref=credential_ref.strip(),
             poll_seconds=poll_seconds,
         )
-    except ValueError as exc:
+    except (ValueError, BadAddress) as exc:
         return _back(str(exc), "err", where="routers=1")
     _save(dc_replace(estate, nodes=(*estate.nodes, node)), path)
     return _back(f"{node.name} added", where="routers=1")
@@ -1511,3 +1467,109 @@ def delete_router(name: str) -> RedirectResponse:
         )
     _save(dc_replace(estate, nodes=tuple(n for n in estate.nodes if n.name != name)), path)
     return _back(f"{name} removed", where="routers=1")
+
+
+# ===========================================================================
+#  Segment types, services and host templates — each its own page
+# ===========================================================================
+
+
+@router.get("/segments", response_class=HTMLResponse)
+def segments_page(request: Request) -> HTMLResponse:
+    """The kinds of segment this range has. Shipped with defaults, edited here."""
+    shipped = load_segment_types(SEGMENT_TYPES)
+    path = estate_path()
+    in_use: dict[str, list[str]] = {}
+    declared: tuple[str, ...] = ()
+    if path.exists():
+        estate = load_estate(path)
+        declared = estate.role_vocabulary
+        for firewall in estate.firewalls:
+            for interface in firewall.interfaces:
+                in_use.setdefault(interface.role, []).append(
+                    f"{firewall.enclave}/{interface.ifname}"
+                )
+    return render(
+        request,
+        "segments.html",
+        page="segments",
+        types=[shipped.get(n, SegmentType(name=n, custom=True)) for n in sorted(declared)]
+        or sorted(shipped.values(), key=lambda t: t.name),
+        in_use=in_use,
+        has_range=path.exists(),
+        messages=(
+            [(request.query_params.get("k", "ok"), request.query_params["m"])]
+            if request.query_params.get("m")
+            else []
+        ),
+    )
+
+
+@router.post("/segments")
+def add_segment_type(name: str = Form(...), descr: str = Form("")) -> RedirectResponse:
+    """Define a segment type, and add it to this range's list."""
+    from dataclasses import replace as dc_replace
+
+    clean = name.strip()
+    if not clean:
+        return RedirectResponse("/segments?m=a segment type needs a name&k=err", status_code=303)
+
+    shipped = load_segment_types(SEGMENT_TYPES)
+    if clean not in shipped:
+        shipped[clean] = SegmentType(name=clean, descr=descr.strip(), custom=True)
+        save_segment_types(shipped, SEGMENT_TYPES)
+
+    path = estate_path()
+    if path.exists():
+        estate = load_estate(path)
+        if clean not in estate.role_vocabulary:
+            _save(dc_replace(estate, role_vocabulary=(*estate.role_vocabulary, clean)), path)
+    return RedirectResponse(f"/segments?m={clean} added", status_code=303)
+
+
+@router.post("/segments/{name}/delete")
+def remove_segment_type(name: str) -> RedirectResponse:
+    """Refused while an interface is still assigned to it."""
+    from dataclasses import replace as dc_replace
+
+    path = estate_path()
+    if path.exists():
+        estate = load_estate(path)
+        used = [
+            f"{f.enclave}/{i.ifname}"
+            for f in estate.firewalls
+            for i in f.interfaces
+            if i.role == name
+        ]
+        if used:
+            return RedirectResponse(
+                f"/segments?m={name} is assigned to " + ", ".join(used) + "&k=err",
+                status_code=303,
+            )
+        _save(
+            dc_replace(
+                estate,
+                role_vocabulary=tuple(r for r in estate.role_vocabulary if r != name),
+            ),
+            path,
+        )
+    return RedirectResponse(f"/segments?m={name} removed from this range", status_code=303)
+
+
+@router.get("/host-templates", response_class=HTMLResponse)
+def host_templates_page(request: Request) -> HTMLResponse:
+    """Host templates, on their own page rather than the bottom of another one."""
+    catalogue = load_services(SERVICE_CATALOGUE)
+    return render(
+        request,
+        "host_templates.html",
+        page="types",
+        host_types=[catalogue.host_types[n] for n in sorted(catalogue.host_types)],
+        catalogue=catalogue,
+        service_names=sorted(catalogue.services),
+        messages=(
+            [(request.query_params.get("k", "ok"), request.query_params["m"])]
+            if request.query_params.get("m")
+            else []
+        ),
+    )
