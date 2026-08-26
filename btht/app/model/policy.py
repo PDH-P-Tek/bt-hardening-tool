@@ -647,3 +647,127 @@ def empty_aliases(policy: Policy) -> list[str]:
     rather than left to be discovered at scoring time.
     """
     return [alias.name for alias in policy.aliases if alias.is_empty]
+
+
+# --- writing policy back ---------------------------------------------------
+
+
+def _selector_out(selector: Selector) -> Any:
+    if selector.any:
+        return "any"
+    out: dict[str, Any] = {}
+    if selector.alias:
+        out["alias"] = selector.alias
+    if selector.host:
+        out["host"] = selector.host
+    if selector.segments:
+        out["segments"] = list(selector.segments)
+    if selector.enclaves:
+        out["enclaves"] = list(selector.enclaves)
+    return out
+
+
+def policy_to_document(policy: Policy) -> dict[str, Any]:
+    """The policy half of the document, ordered for a human reading a diff."""
+    document: dict[str, Any] = {}
+    if policy.aliases:
+        document["aliases"] = [
+            {
+                "name": alias.name,
+                "type": alias.type,
+                **({"lockout_critical": True} if alias.lockout_critical else {}),
+                "entries": [
+                    *([{"alias": a} for a in alias.nested_aliases]),
+                    *([{"segment": s} for s in alias.segments]),
+                    *list(alias.entries),
+                ],
+                **({"descr": alias.descr} if alias.descr else {}),
+            }
+            for alias in policy.aliases
+        ]
+    if policy.dependencies:
+        document["dependencies"] = [
+            {
+                "name": d.name,
+                "from": {
+                    **({"enclaves": list(d.from_enclaves)} if d.from_enclaves else {}),
+                    **({"segments": list(d.from_segments)} if d.from_segments else {}),
+                },
+                "to": {
+                    **({"enclave": d.to_enclave} if d.to_enclave else {}),
+                    **({"alias": d.to_alias} if d.to_alias else {}),
+                    **({"host": d.to_host} if d.to_host else {}),
+                },
+                "protocol": d.protocol,
+                "ports": list(d.ports),
+                **({"notes": d.notes} if d.notes else {}),
+            }
+            for d in policy.dependencies
+        ]
+    if policy.firewalls:
+        document["firewalls"] = [
+            {
+                "enclave": entry.enclave,
+                **({"baseline": entry.baseline} if entry.baseline else {}),
+                "services": [
+                    {
+                        "name": service.name,
+                        **({"segment": service.segment} if service.segment else {}),
+                        **({"host": service.host} if service.host else {}),
+                        **({"alias": service.alias} if service.alias else {}),
+                        "protocol": service.protocol,
+                        "ports": list(service.ports),
+                        "from": _selector_out(service.source),
+                        **({"notes": service.notes} if service.notes else {}),
+                    }
+                    for service in entry.services
+                ],
+                "egress": {
+                    "default": entry.egress.default,
+                    **(
+                        {
+                            "allow": [
+                                {
+                                    "from": _selector_out(a.source),
+                                    "to": _selector_out(a.destination),
+                                    "protocol": a.protocol,
+                                    "ports": list(a.ports),
+                                }
+                                for a in entry.egress.allow
+                            ]
+                        }
+                        if entry.egress.allow
+                        else {}
+                    ),
+                    **({"notes": entry.egress.notes} if entry.egress.notes else {}),
+                },
+            }
+            for entry in policy.firewalls
+        ]
+    document["options"] = {
+        "mandatory_blocks_placement": policy.options.mandatory_blocks_placement,
+        "emit_separators": policy.options.emit_separators,
+        "emit_trackers": policy.options.emit_trackers,
+        "dual_stack": policy.options.dual_stack,
+        "icmp6_minimum": list(policy.options.icmp6_minimum),
+    }
+    return document
+
+
+def save_policy(policy: Policy, path: Path) -> None:
+    """Write policy into an existing document, leaving the inventory untouched.
+
+    The two halves share a file, so each writer replaces only its own top-level keys.
+    Anything the tool does not model is preserved rather than dropped — an operator
+    who added a comment key should not lose it because the wizard saved.
+    """
+    data: dict[str, Any] = {}
+    if path.exists():
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    data.update(policy_to_document(policy))
+    data.setdefault("version", SCHEMA_VERSION)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        yaml.safe_dump(data, sort_keys=False, default_flow_style=False, allow_unicode=True),
+        encoding="utf-8",
+    )

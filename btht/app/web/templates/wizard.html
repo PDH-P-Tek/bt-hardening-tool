@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block nav %} / <a href="/estates/{{ slug }}">{{ slug }}</a> / <strong>{{ enclave }}</strong>{% endblock %}
+{% block body %}
+{% if segment %}<h1>{{ enclave }} — segment {{ step + 1 }} of {{ total }}</h1>
+{% else %}<h1>{{ enclave }} — egress</h1>{% endif %}
+<p class="sub">One segment at a time. Everything here is typed; nothing is required to
+be pasted, because the annex format changes and a paste will sometimes fail.</p>
+
+<div class="panel">
+  <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">
+  {% for s in steps %}
+    <a href="/estates/{{ slug }}/policy/{{ enclave }}?step={{ loop.index0 }}"
+       class="tag {% if loop.index0 == step %}warn{% endif %}">{{ s.role }}</a>
+  {% endfor %}
+    <a href="/estates/{{ slug }}/policy/{{ enclave }}?step=egress"
+       class="tag {% if step == 'egress' %}warn{% endif %}">egress</a>
+  </div>
+
+{% if segment %}
+  <h2>{{ segment.role }}</h2>
+  <p class="sub">
+    <code>{{ segment.ifname }}</code> · {{ segment.v4 or "no IPv4" }}
+    {% if segment.v6 %} · {{ segment.v6 }}{% endif %}
+    {% if segment.is_lan %} · <span class="tag warn">anti-lockout binds here</span>{% endif %}
+  </p>
+
+  {% if hosts %}
+  <table>
+    <tr><th>host</th><th>address</th><th>role</th><th></th></tr>
+    {% for h in hosts %}
+    <tr>
+      <td>{{ h.hostname }}</td>
+      <td><code>{{ h.v4 or "" }}</code></td>
+      <td>{{ h.service_role or "" }}</td>
+      <td>{% if h.out_of_bounds %}<span class="tag warn">out of bounds — never a policy target</span>{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+
+  {% if services %}
+  <h2>Declared on this segment</h2>
+  <table>
+    <tr><th>service</th><th>protocol</th><th>ports</th><th>from</th></tr>
+    {% for s in services %}
+    <tr>
+      <td>{{ s.name }}</td>
+      <td>{{ s.protocol }}</td>
+      <td><code>{{ s.ports|join(", ") }}</code></td>
+      <td>{{ s.source_text }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <div class="note warn">Nothing declared for this segment yet. Anything not declared
+  here will be denied once the generated block-all goes in beneath your rules.</div>
+  {% endif %}
+
+  <h2>Add a service</h2>
+  <form method="post" action="/estates/{{ slug }}/policy/{{ enclave }}/services">
+    <input type="hidden" name="step" value="{{ step }}">
+    <input type="hidden" name="segment" value="{{ segment.role }}">
+    <div class="row">
+      <div><label>what is it — one line the operator will read</label>
+        <input name="name" placeholder="Web DMZ" required></div>
+      <div><label>protocol</label>
+        <select name="protocol">
+          <option>tcp</option><option>udp</option><option>tcp/udp</option><option>icmp</option>
+        </select></div>
+    </div>
+    <div class="row">
+      <div><label>ports, comma separated</label><input name="ports" placeholder="80, 443" required></div>
+      <div><label>host or alias it lives on (optional)</label><input name="host" placeholder="192.0.2.10"></div>
+    </div>
+    <label>who may reach it — say this out loud, it is never assumed</label>
+    <div class="row">
+      <div><label>segments</label><input name="from_segments" placeholder="ws, svrs"></div>
+      <div><label>enclaves</label><input name="from_enclaves" placeholder="dsoc"></div>
+      <div><label>alias</label><input name="from_alias" placeholder="YT_Usersim_Sources"></div>
+      <div><label>or anywhere</label>
+        <select name="from_any"><option value="">no</option><option value="yes">yes, anywhere</option></select></div>
+    </div>
+    <label>notes</label><input name="notes" placeholder="Scored target — usersims reach this">
+    <button type="submit">Add and stay here</button>
+  </form>
+{% else %}
+  <h2>Egress</h2>
+  <p class="sub">What may leave this enclave. A default-deny is good practice and is
+  also what silently severs an agent from its server — declared dependencies are
+  emitted above this deny automatically.</p>
+  <form method="post" action="/estates/{{ slug }}/policy/{{ enclave }}/egress">
+    <label>default</label>
+    <select name="default">
+      {% for option in ("deny_and_log", "deny", "allow") %}
+      <option value="{{ option }}" {% if egress.default == option %}selected{% endif %}>{{ option }}</option>
+      {% endfor %}
+    </select>
+    <label>notes</label><input name="notes" value="{{ egress.notes }}">
+    <button type="submit">Save</button>
+  </form>
+{% endif %}
+</div>
+
+{% if problems %}
+<div class="panel">
+<h2>Not ready to generate</h2>
+{% for problem in problems %}<div class="note err">{{ problem }}</div>{% endfor %}
+</div>
+{% endif %}
+{% endblock %}

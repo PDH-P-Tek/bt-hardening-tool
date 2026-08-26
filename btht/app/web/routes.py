@@ -23,12 +23,20 @@ from btht.app.ingest.pfsense import ParseError, parse_string
 from btht.app.ingest.roles import derive_interfaces, derive_side
 from btht.app.model.estate import Estate, Firewall, Node, Platform
 from btht.app.model.policy import (
+    EgressPolicy,
     EstateFileError,
+    FirewallPolicy,
+    Policy,
+    Selector,
+    ServiceRule,
     convention_of,
     load_estate,
+    load_policy,
     parse_address,
     save_estate,
+    save_policy,
     side_rules_of,
+    validate_policy,
 )
 from btht.app.web.topology import details_json, layout, render_svg
 
@@ -242,3 +250,139 @@ def show_topology(request: Request, slug: str) -> HTMLResponse:
         svg=render_svg(diagram),
         details=details_json(diagram),
     )
+
+
+def _selector_text(selector: Selector) -> str:
+    """One line describing who a rule applies to. The operator reads this, not YAML."""
+    if selector.any:
+        return "anywhere"
+    parts: list[str] = []
+    if selector.segments:
+        parts.append("segments " + ", ".join(selector.segments))
+    if selector.enclaves:
+        parts.append("enclaves " + ", ".join(selector.enclaves))
+    if selector.alias:
+        parts.append(f"alias {selector.alias}")
+    if selector.host:
+        parts.append(selector.host)
+    return " · ".join(parts) or "not declared"
+
+
+def _with_firewall(policy: Policy, enclave: str, **changes: Any) -> Policy:
+    """Update one firewall's policy, creating it if the operator has not started it."""
+    existing = policy.for_enclave(enclave) or FirewallPolicy(enclave=enclave)
+    updated = replace(existing, **changes)
+    others = tuple(f for f in policy.firewalls if f.enclave != enclave)
+    return replace(policy, firewalls=(*others, updated))
+
+
+@router.get("/estates/{slug}/policy/{enclave}", response_class=HTMLResponse)
+def wizard(request: Request, slug: str, enclave: str, step: str = "0") -> HTMLResponse:
+    """Walk one firewall segment by segment — `SPEC.md` §5.1."""
+    path = estate_path(slug)
+    estate = load_estate(path)
+    policy = load_policy(path)
+    firewall = estate.firewall(enclave)
+    if firewall is None:
+        return render(
+            request, "index.html", estates=[], messages=[("err", f"no enclave {enclave}")]
+        )
+
+    segments = [i for i in firewall.interfaces if i.role != "wan"]
+    entry = policy.for_enclave(enclave) or FirewallPolicy(enclave=enclave)
+
+    on_egress = step == "egress"
+    index = 0 if on_egress else max(0, min(int(step or 0), max(len(segments) - 1, 0)))
+    segment = None if on_egress or not segments else segments[index]
+
+    services = []
+    if segment is not None:
+        for service in entry.services:
+            if service.segment == segment.role:
+                services.append(
+                    {
+                        "name": service.name,
+                        "protocol": service.protocol,
+                        "ports": list(service.ports),
+                        "source_text": _selector_text(service.source),
+                    }
+                )
+
+    return render(
+        request,
+        "wizard.html",
+        slug=path.stem,
+        enclave=enclave,
+        steps=segments,
+        step="egress" if on_egress else index,
+        total=len(segments),
+        segment=segment,
+        hosts=[h for h in firewall.hosts if segment and h.segment_role == segment.role],
+        services=services,
+        egress=entry.egress,
+        problems=validate_policy(policy, estate),
+    )
+
+
+@router.post("/estates/{slug}/policy/{enclave}/services")
+def add_service(
+    slug: str,
+    enclave: str,
+    step: str = Form("0"),
+    segment: str = Form(...),
+    name: str = Form(...),
+    protocol: str = Form("tcp"),
+    ports: str = Form(""),
+    host: str = Form(""),
+    from_segments: str = Form(""),
+    from_enclaves: str = Form(""),
+    from_alias: str = Form(""),
+    from_any: str = Form(""),
+    notes: str = Form(""),
+) -> RedirectResponse:
+    path = estate_path(slug)
+    policy = load_policy(path)
+    entry = policy.for_enclave(enclave) or FirewallPolicy(enclave=enclave)
+
+    service = ServiceRule(
+        name=name.strip(),
+        segment=segment.strip(),
+        host=host.strip(),
+        protocol=protocol.strip(),
+        ports=tuple(int(p) for p in _split(ports) if p.isdigit()),
+        source=Selector(
+            any=from_any == "yes",
+            alias=from_alias.strip(),
+            segments=_split(from_segments),
+            enclaves=_split(from_enclaves),
+        ),
+        notes=notes.strip(),
+    )
+    save_policy(
+        _with_firewall(policy, enclave, services=(*entry.services, service)),
+        path,
+    )
+    return RedirectResponse(f"/estates/{slug}/policy/{enclave}?step={step}", status_code=303)
+
+
+@router.post("/estates/{slug}/policy/{enclave}/egress")
+def set_egress(
+    slug: str,
+    enclave: str,
+    default: str = Form("deny_and_log"),
+    notes: str = Form(""),
+) -> RedirectResponse:
+    path = estate_path(slug)
+    policy = load_policy(path)
+    entry = policy.for_enclave(enclave) or FirewallPolicy(enclave=enclave)
+    save_policy(
+        _with_firewall(
+            policy,
+            enclave,
+            egress=EgressPolicy(
+                default=default.strip(), allow=entry.egress.allow, notes=notes.strip()
+            ),
+        ),
+        path,
+    )
+    return RedirectResponse(f"/estates/{slug}/policy/{enclave}?step=egress", status_code=303)
