@@ -75,7 +75,7 @@ setup it resolves nothing and says so, which is the behaviour, not a gap.
 | 2.3 | ✅ Estate policy schema and loader — the durable artefact | §4, §9 | Round-trips YAML; human-editable and diffable |
 | 2.4 | ✅ Wizard, interface by interface, **typed input only** | §5.1 | Every step completable without pasting anything |
 | 2.5 | ✅ Annex paste-parse as a shortcut inside wizard steps | §5.2 | Both annex table shapes parse; **the parse renders back for confirmation** |
-| 2.6 | ISA check assignment and service catalogue | §5.3 | Every host carries its check set; unscored hosts flagged for confirmation |
+| 2.6 | ✅ Scoring check assignment and service catalogue. **Catalogue optional** — with none loaded nothing is proposed and no scoring rules generate | §5.3 | Every host carries a confirmed check set; unscored hosts flagged for confirmation |
 
 ---
 
