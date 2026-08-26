@@ -137,9 +137,7 @@ def check_accounts(items: Iterable[Item]) -> list[Check]:
     )
 
     unlocked = [
-        item
-        for item in items
-        if item.key.startswith("password:") and item.value.startswith("set:")
+        item for item in items if item.key.startswith("password:") and item.value.startswith("set:")
     ]
     out.append(
         Check(

@@ -7,7 +7,7 @@ on something outside the code.
 **This does not replace those lists.** Every step cites its source, and the source
 stays authoritative on *what* the step must do. This file is authoritative on *when*.
 
-Status: **Phases 0–7 complete.** Phase 8 is next and **8.1 is blocked**: Tier 2 XML cannot ship until the CE 2.8.1 box answers Q2, Q12 and MONITORING Q2.
+Status: **Phases 0–7 complete, 8.2 and 8.3 done. Stopped at a blocker.** 8.1 (Tier 2 XML) cannot ship until a CE 2.8.1 box answers Q2, Q12 and MONITORING Q2 — one sitting closes all three. 8.4 is polish; 8.5 is deferred by design.
 
 ---
 
@@ -164,8 +164,8 @@ Nothing here blocks anything above it.
 | # | Step | Source | Gate |
 |---|---|---|---|
 | 8.1 | Tier 2 section-restore XML | `SPEC.md` §9 | **BLOCKED on Q2** — verify on a CE 2.8.1 box first. Do not ship on assumption |
-| 8.2 | Verification manifest and nmap import | `SPEC.md` §11.12, `VERIFICATION.md` | — |
-| 8.3 | Estate-level cross-enclave checks | `SPEC.md` §11.13 | Needs two or more enclaves modelled |
+| 8.2 | ✅ Verification manifest and nmap import | `SPEC.md` §11.12, `VERIFICATION.md` | — |
+| 8.3 | ✅ Estate-level cross-enclave checks | `SPEC.md` §11.13 | Needs two or more enclaves modelled |
 | 8.4 | Monitor polish — `/metrics`, digest export, shift handover | `MONITORING.md` §10.9 | — |
 | 8.5 | `nft monitor` event streaming | `MONITORING.md` §10.10 | Phase 2 by design. Buys latency only |
 
