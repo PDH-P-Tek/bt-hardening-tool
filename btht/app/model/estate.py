@@ -91,8 +91,7 @@ class Interface:
     """The interface anti-lockout binds to."""
 
     upstreams: tuple[str, ...] = ()
-    """Names of the devices this interface connects to — usually the routers a WAN
-    peers with.
+    """Names of the routers this interface peers with. Normally set on the WAN.
 
     Declared, not inferred. Drawing a line from every firewall to every router looks
     like knowledge and is a guess: which router an enclave actually peers with decides

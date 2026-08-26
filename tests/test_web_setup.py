@@ -354,3 +354,57 @@ def test_an_implausible_group_is_refused_with_a_reason(client: TestClient) -> No
         follow_redirects=False,
     )
     assert "typo" in response.headers["location"]
+
+
+def test_a_router_is_declared_without_being_asked_its_platform(
+    client: TestClient, tmp_path: Path
+) -> None:
+    """A router on this range is FRR on Linux. Offering a choice invites a wrong one."""
+    make_estate(client)
+    response = client.post(
+        "/range/routers",
+        data={"name": "r1", "mgmt_address": "25.42.0.1", "ssh_user": "analyst"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    estate = load_estate(tmp_path / "estates" / "range.yaml")
+    router = estate.nodes[0]
+    assert router.name == "r1"
+    assert router.platform.value == "frr"
+
+    body = client.get("/range?routers=1").text
+    assert "Add a router" in body
+    assert "pfsense" not in body, "no platform to choose from"
+
+
+def test_an_interface_declares_which_routers_it_peers_with(
+    client: TestClient, tmp_path: Path
+) -> None:
+    with_an_enclave(client)
+    client.post(
+        "/range/routers", data={"name": "r1", "mgmt_address": "25.42.0.1"},
+        follow_redirects=False,
+    )
+    client.post(
+        "/range/edit/interface/alpha/opt1",
+        data={"ifname": "opt1", "role": "svrs", "upstreams": "r1"},
+        follow_redirects=False,
+    )
+    interface = load_estate(tmp_path / "estates" / "range.yaml").firewalls[0].interfaces[0]
+    assert interface.upstreams == ("r1",)
+
+
+def test_a_router_something_still_peers_with_is_not_removed(client: TestClient) -> None:
+    with_an_enclave(client)
+    client.post(
+        "/range/routers", data={"name": "r1", "mgmt_address": "25.42.0.1"},
+        follow_redirects=False,
+    )
+    client.post(
+        "/range/edit/interface/alpha/opt1",
+        data={"ifname": "opt1", "role": "svrs", "upstreams": "r1"},
+        follow_redirects=False,
+    )
+    response = client.post("/range/routers/r1/delete", follow_redirects=False)
+    assert "alpha/opt1" in response.headers["location"], "the refusal names what still peers"

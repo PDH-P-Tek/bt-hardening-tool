@@ -128,7 +128,7 @@ def _range_page(
     params = request.query_params
     enclave = params.get("enclave", "")
     ifname = params.get("interface", "")
-    showing_devices = params.get("devices") == "1"
+    showing_routers = params.get("routers") == "1"
 
     firewall = estate.firewall(enclave) if enclave else None
     interface = None
@@ -150,8 +150,8 @@ def _range_page(
         host_count=sum(len(f.all_hosts(catalogue)) for f in estate.firewalls),
         selected_enclave=enclave,
         selected_interface=ifname,
-        showing_devices=showing_devices,
-        devices=sorted(estate.nodes, key=lambda n: n.name),
+        showing_routers=showing_routers,
+        routers=sorted(estate.nodes, key=lambda n: n.name),
         firewall=firewall,
         interface=interface,
         hosts=hosts,
@@ -754,10 +754,10 @@ def edit_interface_form(request: Request, enclave: str, ifname: str) -> HTMLResp
             {"name": "descr", "label": "description", "value": interface.descr},
             {
                 "name": "upstreams",
-                "label": "connects to, comma separated",
+                "label": "peers with, comma separated",
                 "value": ", ".join(interface.upstreams),
-                "hint": "Declared devices this interface peers with — usually the "
-                "routers a WAN talks to. Declared: "
+                "hint": "Which routers this interface peers with, normally set on the "
+                "WAN. Declared routers: "
                 + (", ".join(sorted(n.name for n in load_estate(path).nodes)) or "none yet"),
             },
         ],
@@ -1456,20 +1456,19 @@ def add_group(
     )
 
 
-@router.post("/range/devices")
-def add_device(
+@router.post("/range/routers")
+def add_router(
     name: str = Form(...),
-    platform: str = Form("frr"),
     mgmt_address: str = Form(...),
     ssh_user: str = Form(""),
     gui_url: str = Form(""),
     credential_ref: str = Form(""),
     poll_seconds: int = Form(60),
 ) -> RedirectResponse:
-    """A router, or anything else on the range that is not a firewall.
+    """A router. Always FRR on Linux, so the platform is not a question worth asking.
 
-    They exist in their own right: the monitor polls them, and an interface can say it
-    peers with them.
+    They exist in their own right: the monitor polls them, and a firewall interface
+    says which of them it peers with.
     """
     from dataclasses import replace as dc_replace
 
@@ -1478,7 +1477,7 @@ def add_device(
     try:
         node = Node(
             name=name.strip(),
-            platform=Platform(platform),
+            platform=Platform.FRR,
             mgmt_address=parse_address(mgmt_address),
             ssh_user=ssh_user.strip(),
             gui_url=gui_url.strip(),
@@ -1486,14 +1485,14 @@ def add_device(
             poll_seconds=poll_seconds,
         )
     except ValueError as exc:
-        return _back(str(exc), "err", where="devices=1")
+        return _back(str(exc), "err", where="routers=1")
     _save(dc_replace(estate, nodes=(*estate.nodes, node)), path)
-    return _back(f"{node.name} added", where="devices=1")
+    return _back(f"{node.name} added", where="routers=1")
 
 
-@router.post("/range/devices/{name}/delete")
-def delete_device(name: str) -> RedirectResponse:
-    """Refused while an interface still says it peers with this device."""
+@router.post("/range/routers/{name}/delete")
+def delete_router(name: str) -> RedirectResponse:
+    """Refused while an interface still says it peers with this router."""
     from dataclasses import replace as dc_replace
 
     path = estate_path()
@@ -1508,7 +1507,7 @@ def delete_device(name: str) -> RedirectResponse:
         return _back(
             f"{name} is still connected to " + ", ".join(peers) + ". Clear those first.",
             "err",
-            where="devices=1",
+            where="routers=1",
         )
     _save(dc_replace(estate, nodes=tuple(n for n in estate.nodes if n.name != name)), path)
-    return _back(f"{name} removed", where="devices=1")
+    return _back(f"{name} removed", where="routers=1")

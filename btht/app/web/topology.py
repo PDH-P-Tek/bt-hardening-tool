@@ -196,7 +196,7 @@ def _firewall_detail(firewall: Firewall, hosts: tuple[Host, ...]) -> dict[str, A
         )
     if not any(i.upstreams for i in firewall.interfaces):
         warnings.append(
-            "No upstream devices declared, so this firewall is drawn unconnected. Set "
+            "No routers declared for this firewall, so it is drawn unconnected. Set "
             "them on the WAN interface — which routers it peers with is what decides "
             "whether the routing rule covers the adjacency it needs."
         )
@@ -246,7 +246,7 @@ def _interface_detail(
         "title": f"{firewall.enclave} · {interface.role}",
         "fields": [
             ("interface", interface.ifname),
-            ("connects to", ", ".join(interface.upstreams) or "nothing declared"),
+            ("peers with", ", ".join(interface.upstreams) or "no routers declared"),
             ("role", interface.role),
             ("IPv4", str(interface.v4) if interface.v4 else "none"),
             ("IPv6", str(interface.v6) if interface.v6 else "none"),
@@ -331,7 +331,7 @@ def layout(
         (n.name, f"{n.platform.value} · {n.mgmt_address}", f"node:{n.name}") for n in routers
     ]
     if not uplink_labels:
-        uplink_labels = [("no devices declared", "add routers on the Range page", "uplink")]
+        uplink_labels = [("no routers declared", "add them on the Range page", "uplink")]
 
     total_width = 0
     widths = [_column_width(f, view) for f in firewalls]
@@ -542,8 +542,7 @@ def render_svg(diagram: Diagram) -> str:
     for link in diagram.links:
         if link.shape == "line":
             parts.append(
-                f'<path class="link" d="M {link.x1} {link.y1} L {link.x2} {link.y2}" '
-                'fill="none"/>'
+                f'<path class="link" d="M {link.x1} {link.y1} L {link.x2} {link.y2}" fill="none"/>'
             )
             continue
         middle = (link.y1 + link.y2) // 2

@@ -33,23 +33,22 @@
   <a class="tile add {% if selected_enclave == '__new' %}here{% endif %}" href="/range?enclave=__new">
     <span class="count">+</span><h3>Add an enclave</h3><p>A firewall and its segments</p>
   </a>
-  <a class="tile {% if showing_devices %}here{% endif %}" href="/range?devices=1">
-    <span class="count">{{ devices|length }}</span>
-    <h3>Routers and devices</h3>
-    <p>Everything on the range that is not a firewall</p>
+  <a class="tile {% if showing_routers %}here{% endif %}" href="/range?routers=1">
+    <span class="count">{{ routers|length }}</span>
+    <h3>Routers</h3>
+    <p>What the firewalls peer with</p>
   </a>
 </div>
 
-{% if showing_devices %}
+{% if showing_routers %}
 <div class="panel">
-<h2>Routers and other devices</h2>
-{% if devices %}
+<h2>Routers</h2>
+{% if routers %}
 <table>
-  <tr><th>name</th><th>platform</th><th>address</th><th>connected to</th><th></th></tr>
-  {% for d in devices %}
+  <tr><th>name</th><th>address</th><th>peers with</th><th></th></tr>
+  {% for d in routers %}
   <tr>
     <td>{{ d.name }}</td>
-    <td>{{ d.platform.value }}</td>
     <td><code>{{ d.mgmt_address }}</code></td>
     <td class="sub">
       {% set peers = [] %}
@@ -59,7 +58,7 @@
       {{ peers|join(", ") or "nothing yet" }}
     </td>
     <td>
-      <form method="post" action="/range/devices/{{ d.name }}/delete"
+      <form method="post" action="/range/routers/{{ d.name }}/delete"
             onsubmit="return confirm('Remove {{ d.name }}?')">
         <button class="btn small danger" type="submit">Remove</button>
       </form>
@@ -68,16 +67,14 @@
   {% endfor %}
 </table>
 {% else %}
-<div class="note warn">None declared. Firewalls will be drawn unconnected until you add
-the routers they peer with.</div>
+<div class="note warn">None declared. Firewalls are drawn unconnected until you add the
+routers they peer with.</div>
 {% endif %}
 
-<h3 style="font-size:14px">Add a device</h3>
-<form method="post" action="/range/devices">
+<h3 style="font-size:14px">Add a router</h3>
+<form method="post" action="/range/routers">
   <div class="row">
     <div><label>name</label><input name="name" placeholder="r1" required></div>
-    <div><label>platform</label><select name="platform">
-      {% for p in platforms %}<option value="{{ p }}">{{ p }}</option>{% endfor %}</select></div>
     <div><label>management address</label><input name="mgmt_address" placeholder="25.42.0.1" required></div>
   </div>
   <div class="row">
@@ -87,7 +84,7 @@ the routers they peer with.</div>
     <div><label>poll interval, seconds</label>
       <input name="poll_seconds" type="number" min="30" value="60"></div>
   </div>
-  <button class="btn" type="submit">Add device</button>
+  <button class="btn" type="submit">Add router</button>
 </form>
 </div>
 {% endif %}
@@ -154,10 +151,10 @@ the routers they peer with.</div>
     <div><label>IPv6 with prefix</label><input name="v6" placeholder="fd81:25:42:10::1/64"></div>
   </div>
   <label>description</label><input name="descr">
-  {% if devices %}
-  <label>connects to</label>
+  {% if routers %}
+  <label>peers with</label>
   <div class="row">
-    {% for d in devices %}
+    {% for d in routers %}
     <div style="flex:0 0 auto">
       <label style="text-transform:none">
         <input type="checkbox" name="upstreams" value="{{ d.name }}" style="width:auto">
@@ -166,8 +163,8 @@ the routers they peer with.</div>
     </div>
     {% endfor %}
   </div>
-  <div class="sub" style="margin-top:3px">Which declared devices this interface peers
-  with. Usually the routers a WAN talks to.</div>
+  <div class="sub" style="margin-top:3px">Which routers this interface peers with.
+  Normally set on the WAN.</div>
   {% endif %}
   <button class="btn" type="submit">Add interface</button>
 </form>

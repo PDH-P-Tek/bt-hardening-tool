@@ -252,8 +252,7 @@ def test_a_firewall_is_linked_only_to_what_it_declares() -> None:
     wired = replace(
         firewall,
         interfaces=tuple(
-            replace(i, upstreams=("r1",)) if i.ifname == "wan" else i
-            for i in firewall.interfaces
+            replace(i, upstreams=("r1",)) if i.ifname == "wan" else i for i in firewall.interfaces
         ),
     )
     assert layout(replace(estate, firewalls=(wired,)), View(), "demo", CATALOGUE).links
