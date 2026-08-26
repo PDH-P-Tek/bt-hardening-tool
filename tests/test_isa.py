@@ -11,12 +11,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from btht.app.ingest.isa import EMPTY, assign, load_catalogue, required_ports
+from btht.app.ingest.isa import EMPTY, Catalogue, assign, load_catalogue, required_ports
 
 SHIPPED = Path(__file__).resolve().parents[1] / "isa-checks.yaml"
 
 
-def catalogue():  # type: ignore[no-untyped-def]
+def catalogue() -> Catalogue:
     return load_catalogue(SHIPPED)
 
 

@@ -21,7 +21,7 @@ fmt:
 typecheck:
 	uv run mypy
 
-check: lint typecheck test   ## what CI runs
+check: lint typecheck test   ## what CI runs. Fails fast: a broken step stops the rest.
 
 run:                ## serve the app on localhost:8000
 	uv run uvicorn btht.app.main:app --reload --port 8000
