@@ -1,0 +1,49 @@
+[project]
+name = "bt-hardening-tool"
+version = "0.1.0"
+description = "Firewall and router hardening tool for Blue Team network defenders"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115",
+    "jinja2>=3.1",
+    "pyyaml>=6.0",
+    "uvicorn>=0.34",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "hypothesis>=6.120",
+    "ruff>=0.8",
+    "mypy>=1.13",
+    "types-PyYAML>=6.0",
+    "httpx>=0.28",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["btht"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --strict-markers"
+markers = [
+    "golden: one case per validator ID or evidence finding",
+    "property: normalisation and fingerprint invariants",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unreachable = true
+files = ["btht", "tests"]

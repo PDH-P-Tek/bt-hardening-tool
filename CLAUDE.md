@@ -80,22 +80,34 @@ Two are worth knowing before you touch the pfSense adapter: whether pfSense pres
 
 **No attribution lines.** No "Co-Authored-By", no "Generated with", in code, commits or documents.
 
-## Repository state — there is no code yet
+## Repository state and commands
 
-Design package only: markdown specs, YAML data files, two HTML wireframes. No Python package, no `pyproject.toml`, no tests, no container, and **no commits yet** — the repository is initialised on `main` with `origin` set to `git@github.com:PDH-P-Tek/bt-hardening-tool.git`.
+Phase 0 of `BUILD-PLAN.md` is in progress: toolchain, CI and the shared inventory
+model exist; nothing else does yet. `uv` manages the environment, Python is pinned to
+3.12 in `.python-version` (the spec floor is 3.11).
 
-So there are no build, lint or test commands to hand you. The first milestone (`SPEC.md` §11 step 1) stands the toolchain up alongside the parse layer. **When you do that, record the real commands in this section** — including how to run a single test — because the next agent starts here.
+```bash
+make install      # uv sync — create the venv, install everything
+make test         # uv run pytest
+make test-one TEST=tests/test_x.py::test_y
+make lint         # ruff check
+make fmt          # ruff format + --fix
+make typecheck    # mypy, strict, over btht/ and tests/
+make check        # lint + typecheck + test. What CI runs.
+```
+
+CI is `.github/workflows/ci.yml`, running the same three steps on every push.
 
 What the tooling has to support, from `SPEC.md` §10.2:
 
-- **Per-validator golden tests.** Every `V-*` needs a case that fires *and* a clean-baseline case that stays silent, so selecting one validator's tests by ID must be cheap.
-- **The secret-exclusion test runs in CI on every commit.** It is the control; `.gitignore` is only the safety net.
+- **Per-validator golden tests.** Every `V-*` needs a case that fires *and* a clean-baseline case that stays silent. `make test-one` selects by node id; the `golden` marker groups them.
+- **The secret-exclusion test runs on every commit** (`tests/test_secret_exclusion.py`). It scans tracked files and fixtures for credential material and asserts `.gitignore` still covers working data. It is the control; `.gitignore` is the safety net. It has been proved against a planted hash — keep it that way if you extend it.
 - **Determinism is a test.** Byte-identical output across runs *and separate processes*, so nothing in emission may depend on dict ordering or hash seed.
 - **Offline is testable too, and should be tested.** Any code path reaching the network outside the monitor's SSH transport is a defect, not a preference.
 
 ## Architecture — the shared spine
 
-Module layout is `SPEC.md` §3; read it before adding a file. What is worth knowing before you open it:
+Module layout is `SPEC.md` §3; read it before adding a file. **One deviation:** `tests/` sits at the repository root rather than inside `btht/`, because `.gitignore`'s `!tests/fixtures/**/*.xml` negation is anchored to the root and would otherwise refuse to track any fixture XML. Everything else follows §3. What is worth knowing before you open it:
 
 **One pipeline, pure at the core.**
 
