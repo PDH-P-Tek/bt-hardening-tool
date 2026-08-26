@@ -294,10 +294,6 @@ named_services:
   SMB:
     tcp:
     - 445
-    - 139
-    udp:
-    - 137
-    - 138
     descr: Windows file sharing
     confidence: standard
   Kerberos:
@@ -343,7 +339,6 @@ named_services:
     tcp:
     - 25
     - 587
-    - 465
     descr: Mail transport
     confidence: standard
     note: 25 is scored.
@@ -421,18 +416,38 @@ named_services:
     tcp:
     - 5900
     descr: Remote desktop
-    confidence: standard
+    confidence: assumed
   WinRM:
     tcp:
     - 5985
     - 5986
     descr: Windows remote management
     confidence: standard
+  NetBIOS:
+    tcp:
+    - 139
+    udp:
+    - 137
+    - 138
+    descr: Legacy Windows name service
+    confidence: standard
+    note: 'Separate from SMB on purpose: picking file sharing should not open name services as well.'
+  SMTPS:
+    tcp:
+    - 465
+    descr: Implicit-TLS mail submission
+    confidence: assumed
+  Squid proxy:
+    tcp:
+    - 3128
+    - 8080
+    descr: Forward web proxy
+    confidence: assumed
+    note: Port assumed from the observed build; confirm before relying on it.
 host_types:
   windows_workstation:
     services:
     - RDP
-    - SMB
     default_os: Windows 10 22H2
     descr: User workstation. Scored on RDP, and the user simulators log into it.
   linux_workstation:
@@ -450,12 +465,13 @@ host_types:
     - RPC endpoint mapper
     - RPC dynamic range
     - SMB
-    - RDP
+    - NTP
     default_os: Windows Server 2022
     descr: The heaviest scored target in an estate, and the easiest to half-break.
   file_server:
     services:
     - SMB
+    - NetBIOS
     - RDP
     default_os: Windows Server 2022
   mail_server:
@@ -463,9 +479,8 @@ host_types:
     - SMTP
     - IMAP
     - POP3
-    - HTTPS
     - HTTP
-    - RDP
+    - HTTPS
     default_os: Windows Server 2022
     descr: HTTPS is the webmail interface and is usually required by the annex.
   web_server:
@@ -485,11 +500,11 @@ host_types:
     - HTTP
     - HTTPS
     - SSH
+    - Squid proxy
     default_os: Ubuntu 24.04
   ftp_server:
     services:
     - FTP control
-    - SSH
     default_os: Ubuntu 24.04
   nextcloud:
     services:
@@ -498,8 +513,7 @@ host_types:
     - SSH
     default_os: Ubuntu 24.04
   npc_server:
-    services:
-    - SSH
+    services: []
     default_os: Ubuntu 24.04
     descr: Out of bounds. Its outbound path is a scored obligation, so never build policy around blocking
       it.
@@ -520,15 +534,17 @@ host_types:
   plc:
     services:
     - Modbus
+    - SSH
     default_os: Siemens
     descr: Industrial. Treat availability as the priority.
   hmi:
     services:
-    - VNC
+    - SSH
     - HTTP
     default_os: Windows
   historian:
     services:
     - SSH
     - HTTP
+    - MySQL/MariaDB
     default_os: Linux

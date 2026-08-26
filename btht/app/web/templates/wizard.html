@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block nav %} / <a href="/estates/{{ slug }}">{{ slug }}</a> / <strong>{{ enclave }}</strong>{% endblock %}
+{% block nav %} / <a href="/range">{{ slug }}</a> / <strong>{{ enclave }}</strong>{% endblock %}
 {% block body %}
 {% if segment %}<h1>{{ enclave }} — segment {{ step + 1 }} of {{ total }}</h1>
 {% else %}<h1>{{ enclave }} — egress</h1>{% endif %}
@@ -9,10 +9,10 @@ be pasted, because the annex format changes and a paste will sometimes fail.</p>
 <div class="panel">
   <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">
   {% for s in steps %}
-    <a href="/estates/{{ slug }}/policy/{{ enclave }}?step={{ loop.index0 }}"
+    <a href="/range/policy/{{ enclave }}?step={{ loop.index0 }}"
        class="tag {% if loop.index0 == step %}warn{% endif %}">{{ s.role }}</a>
   {% endfor %}
-    <a href="/estates/{{ slug }}/policy/{{ enclave }}?step=egress"
+    <a href="/range/policy/{{ enclave }}?step=egress"
        class="tag {% if step == 'egress' %}warn{% endif %}">egress</a>
   </div>
 
@@ -57,7 +57,7 @@ be pasted, because the annex format changes and a paste will sometimes fail.</p>
   {% endif %}
 
   <h2>Add a service</h2>
-  <form method="post" action="/estates/{{ slug }}/policy/{{ enclave }}/services">
+  <form method="post" action="/range/policy/{{ enclave }}/services">
     <input type="hidden" name="step" value="{{ step }}">
     <input type="hidden" name="segment" value="{{ segment.role }}">
     <div class="row">
@@ -81,14 +81,14 @@ be pasted, because the annex format changes and a paste will sometimes fail.</p>
         <select name="from_any"><option value="">no</option><option value="yes">yes, anywhere</option></select></div>
     </div>
     <label>notes</label><input name="notes" placeholder="Scored target — usersims reach this">
-    <button type="submit">Add and stay here</button>
+    <button class="btn" type="submit">Add and stay here</button>
   </form>
 {% else %}
   <h2>Egress</h2>
   <p class="sub">What may leave this enclave. A default-deny is good practice and is
   also what silently severs an agent from its server — declared dependencies are
   emitted above this deny automatically.</p>
-  <form method="post" action="/estates/{{ slug }}/policy/{{ enclave }}/egress">
+  <form method="post" action="/range/policy/{{ enclave }}/egress">
     <label>default</label>
     <select name="default">
       {% for option in ("deny_and_log", "deny", "allow") %}
@@ -96,7 +96,7 @@ be pasted, because the annex format changes and a paste will sometimes fail.</p>
       {% endfor %}
     </select>
     <label>notes</label><input name="notes" value="{{ egress.notes }}">
-    <button type="submit">Save</button>
+    <button class="btn" type="submit">Save</button>
   </form>
 {% endif %}
 </div>

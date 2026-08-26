@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block nav %} / <a href="/estates/{{ slug }}">{{ slug }}</a> / <strong>{{ enclave }} review</strong>{% endblock %}
+{% block nav %} / <a href="/range">{{ slug }}</a> / <strong>{{ enclave }} review</strong>{% endblock %}
 {% block body %}
 <h1>{{ enclave }} — review before export</h1>
 <p class="sub">Nothing leaves without passing through here. Blocking findings cannot be
@@ -9,8 +9,8 @@ acknowledged away; warnings are acknowledged one at a time, on purpose.</p>
   <h2>Can this be exported?</h2>
   <div class="note {% if gate.may_export %}ok{% else %}err{% endif %}">{{ gate.reason }}</div>
   {% if gate.may_export %}
-  <form method="post" action="/estates/{{ slug }}/review/{{ enclave }}/export">
-    <button type="submit">Export the checklist</button>
+  <form method="post" action="/range/review/{{ enclave }}/export">
+    <button class="btn" type="submit">Export the checklist</button>
   </form>
   {% endif %}
 </div>
@@ -39,9 +39,9 @@ There is no override; fix the cause.</p>
       {% if keys[loop.index0] in gate.acknowledged %}
         <span class="tag">acknowledged</span>
       {% else %}
-      <form method="post" action="/estates/{{ slug }}/review/{{ enclave }}/acknowledge">
+      <form method="post" action="/range/review/{{ enclave }}/acknowledge">
         <input type="hidden" name="key" value="{{ keys[loop.index0] }}">
-        <button class="quiet" type="submit">Acknowledge this one</button>
+        <button class="btn small quiet" type="submit">Acknowledge this one</button>
       </form>
       {% endif %}
     </td>

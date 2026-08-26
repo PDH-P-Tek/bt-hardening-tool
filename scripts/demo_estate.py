@@ -1,4 +1,4 @@
-"""Build a demo estate so the tool can be looked at without a range.
+"""Build a demo range so the tool can be looked at without a real one.
 
 Modelled on the **Deployed Official** and **Deployed Secret** enclaves as the range
 diagram draws them, on team 42, so the mapping can be checked against something real:
@@ -321,7 +321,7 @@ def build() -> tuple[Estate, Policy]:
 
 def main() -> int:
     estate, policy = build()
-    path = ESTATES / "demo.yaml"
+    path = ESTATES / "range.yaml"
     save_estate(
         estate,
         path,
@@ -339,7 +339,7 @@ def main() -> int:
             f"{len(hosts)} hosts ({groups} from groups)"
         )
     print(f"wrote {path}")
-    print("open http://127.0.0.1:8000/estates/demo/topology")
+    print("open http://127.0.0.1:8000/range/topology")
     return 0
 
 

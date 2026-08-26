@@ -274,21 +274,21 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClie
     store = tmp_path / "estates"
     monkeypatch.setattr(data_module, "ESTATES", store)
     monkeypatch.setattr("btht.app.web.routes.ESTATES", store)
-    save_estate(an_estate(), store / "demo.yaml")
+    save_estate(an_estate(), store / "range.yaml")
     with TestClient(app) as test_client:
         yield test_client
 
 
 def test_a_view_is_a_link_that_can_be_sent_to_someone(client: TestClient) -> None:
-    body = client.get("/estates/demo/topology?open=alpha&open=alpha%3Aopt1&focus=alpha").text
+    body = client.get("/range/topology?open=alpha&open=alpha%3Aopt1&focus=alpha").text
     assert 'data-detail="host:alpha:dc01"' in body
     assert "fw1.alpha.example" in body, "the focused detail is rendered server-side"
 
 
 def test_the_page_says_it_is_a_view(client: TestClient) -> None:
-    assert "This is a view" in client.get("/estates/demo/topology").text
+    assert "This is a view" in client.get("/range/topology").text
 
 
 def test_the_page_loads_no_external_assets(client: TestClient) -> None:
-    body = client.get("/estates/demo/topology").text
+    body = client.get("/range/topology").text
     assert "<script src" not in body and "cdn." not in body

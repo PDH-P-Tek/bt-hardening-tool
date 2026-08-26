@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block nav %} / <a href="/estates/{{ slug }}">{{ slug }}</a> / <strong>edit</strong>{% endblock %}
+{% block nav %} / <a href="/range">{{ slug }}</a> / <strong>edit</strong>{% endblock %}
 {% block body %}
 <h1>{{ title }}</h1>
 <p class="sub">Change what is wrong and save. Nothing else moves.</p>
@@ -23,7 +23,7 @@
     {% endif %}
     {% if field.hint %}<div class="sub" style="margin-top:3px">{{ field.hint }}</div>{% endif %}
   {% endfor %}
-  <button type="submit">Save changes</button>
+  <button class="btn" type="submit">Save changes</button>
 </form>
 </div>
 
@@ -37,7 +37,7 @@
 </p>
 <form method="post" action="{{ delete_action }}"
       onsubmit="return confirm('Remove this? The check runs first, so this may be refused.')">
-  <button type="submit" class="quiet">Remove</button>
+  <button type="submit" class="btn danger">Remove</button>
 </form>
 </div>
 {% endif %}

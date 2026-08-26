@@ -1,9 +1,9 @@
 {% extends "base.html" %}
-{% block nav %} / <a href="/estates/{{ slug }}">{{ slug }}</a> / <strong>topology</strong>{% endblock %}
+{% block nav %} / <a href="/range">{{ slug }}</a> / <strong>topology</strong>{% endblock %}
 {% block body %}
 <h1>{{ slug }} — topology</h1>
 <p class="sub">Click a firewall to open its segments, then a segment to see the machines
-on it. This is a view: to change the estate, <a href="/estates/{{ slug }}">edit it</a>.</p>
+on it. This is a view: to change the estate, <a href="/range">edit it</a>.</p>
 
 <style>
 .topology{display:flex;gap:18px;align-items:flex-start;flex-wrap:wrap}
@@ -39,7 +39,7 @@ svg .badge{font-size:9.5px;fill:var(--muted)}
 </style>
 
 <div class="panel">
-<form method="get" action="/estates/{{ slug }}/topology" class="filters">
+<form method="get" action="/range/topology" class="filters">
   {% for open_id in open_ids %}<input type="hidden" name="open" value="{{ open_id }}">{% endfor %}
   <div><label>host type</label>
     <select name="host_type">
@@ -61,9 +61,9 @@ svg .badge{font-size:9.5px;fill:var(--muted)}
   <div><label>out of bounds only</label>
     <select name="oob"><option value="">no</option>
       <option value="1" {% if view.only_out_of_bounds %}selected{% endif %}>yes</option></select></div>
-  <div><button type="submit">Apply</button></div>
+  <div><button class="btn" type="submit">Apply</button></div>
   {% if view.filtering %}
-  <div><a href="/estates/{{ slug }}/topology">clear filters</a></div>
+  <div><a class="btn small quiet" href="/range/topology">clear filters</a></div>
   {% endif %}
 </form>
 {% if diagram.hidden_by_filter %}
@@ -75,7 +75,7 @@ filtered view is not the estate — clear it before concluding anything is missi
   {% for firewall in estate.firewalls %}
   <a href="{{ open_all_links[firewall.enclave] }}">{{ firewall.enclave }}</a>{% if not loop.last %} · {% endif %}
   {% endfor %}
-  · <a href="/estates/{{ slug }}/topology">collapse all</a>
+  · <a class="btn small quiet" href="/range/topology">collapse all</a>
 </div>
 </div>
 

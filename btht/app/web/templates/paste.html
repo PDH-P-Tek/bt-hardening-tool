@@ -1,17 +1,17 @@
 {% extends "base.html" %}
-{% block nav %} / <a href="/estates/{{ slug }}">{{ slug }}</a> / <strong>{{ enclave }}</strong> / paste{% endblock %}
+{% block nav %} / <a href="/range">{{ slug }}</a> / <strong>{{ enclave }}</strong> / paste{% endblock %}
 {% block body %}
 <h1>{{ enclave }} — paste from the annex</h1>
 <p class="sub">An accelerator. Nothing here is applied until you confirm it, and the
 line you pasted is shown beside what the tool made of it.</p>
 
 <div class="panel">
-<form method="post" action="/estates/{{ slug }}/enclaves/{{ enclave }}/paste">
+<form method="post" action="/range/enclaves/{{ enclave }}/paste">
   <label>paste the device list or the subnet table — either, or both at once</label>
   <textarea name="text" rows="10" style="width:100%;font-family:var(--mono);font-size:12.5px;
     padding:9px;border:1px solid var(--line);border-radius:5px;background:var(--bg);
     color:var(--ink)">{{ text }}</textarea>
-  <button type="submit">Parse and show me</button>
+  <button class="btn" type="submit">Parse and show me</button>
 </form>
 </div>
 
@@ -23,7 +23,7 @@ line you pasted is shown beside what the tool made of it.</p>
 listed below with nothing filled in — correct them by hand or leave them out.</div>
 {% endif %}
 
-<form method="post" action="/estates/{{ slug }}/enclaves/{{ enclave }}/paste/confirm">
+<form method="post" action="/range/enclaves/{{ enclave }}/paste/confirm">
   <input type="hidden" name="text" value="{{ text }}">
   <table>
     <tr><th>keep</th><th>host</th><th>IPv4</th><th>IPv6</th><th>description</th><th>the line you pasted</th></tr>
@@ -41,7 +41,7 @@ listed below with nothing filled in — correct them by hand or leave them out.<
     </tr>
     {% endfor %}
   </table>
-  <button type="submit">Keep the ticked rows</button>
+  <button class="btn" type="submit">Keep the ticked rows</button>
 </form>
 </div>
 {% endif %}

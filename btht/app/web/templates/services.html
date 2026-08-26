@@ -19,7 +19,7 @@ anything bespoke is yours to define, and neither is more real than the other.</p
       {% else %}<span class="tag warn">unverified</span>{% endif %}
     </td>
     <td class="sub">{{ s.note }}</td>
-    <td><a href="/services/edit/{{ s.name|urlencode }}">edit</a></td>
+    <td><a class="btn small quiet" href="/services/edit/{{ s.name|urlencode }}">Edit</a></td>
   </tr>
   {% endfor %}
 </table>
@@ -46,12 +46,12 @@ knows well-known ports makes the operator lie about what they are running.</p>
   </div>
   <label>note — anything a tired reader needs to know when they pick this</label>
   <input name="note">
-  <button type="submit">Add service</button>
+  <button class="btn" type="submit">Add service</button>
 </form>
 </div>
 
 <div class="panel">
-<h2>Host types — {{ host_types|length }}</h2>
+<h2 id="types">Host types — {{ host_types|length }}</h2>
 <table>
   <tr><th>type</th><th>default OS</th><th>services</th><th></th></tr>
   {% for t in host_types %}
@@ -59,7 +59,7 @@ knows well-known ports makes the operator lie about what they are running.</p>
     <td>{{ t.name }}{% if t.custom %} <span class="tag">yours</span>{% endif %}</td>
     <td>{{ t.default_os }}</td>
     <td class="sub">{{ t.services|join(", ") }}</td>
-    <td><a href="/services/types/edit/{{ t.name|urlencode }}">edit</a></td>
+    <td><a class="btn small quiet" href="/services/types/edit/{{ t.name|urlencode }}">Edit</a></td>
   </tr>
   {% endfor %}
 </table>
@@ -76,7 +76,7 @@ knows well-known ports makes the operator lie about what they are running.</p>
   <input name="services" placeholder="SSH, HTTPS">
   <div class="sub" style="margin-top:4px">known: {{ service_names|join(", ") }}</div>
   <label>description</label><input name="descr">
-  <button type="submit">Add host type</button>
+  <button class="btn" type="submit">Add host type</button>
 </form>
 </div>
 {% endblock %}

@@ -257,3 +257,73 @@ def test_counting_and_mirroring_genuinely_differ() -> None:
     ).expand()
     assert str(counted[9].v6) == "fd81:25:42:9::b"
     assert str(mirrored[9].v6) == "fd81:25:42:9::11"
+
+
+# --- the guard that should have existed from the start ----------------------
+
+
+def test_no_host_type_opens_a_port_the_evidence_does_not_support() -> None:
+    """Seeded host types must match the shipped role-keyed port sets exactly.
+
+    This test exists because the first seeding invented ports. `windows_workstation`
+    gained SMB, which the source does not list — it says workstations are 3389 and 22,
+    "Windows hosts scored on RDP, Linux on SSH". A generated ruleset would have opened
+    file sharing inbound to every workstation in the estate, for no reason anybody
+    could have traced, and every layer downstream would have treated it as declared
+    intent.
+
+    Inventing a port is the exact failure this tool exists to prevent, so it is
+    asserted rather than reviewed.
+    """
+    import yaml
+
+    data = yaml.safe_load(SHIPPED.read_text(encoding="utf-8"))
+    role_sets = data["services"]
+    named = data["named_services"]
+
+    def implied(service_names: list[str]) -> tuple[set[int], set[int]]:
+        tcp: set[int] = set()
+        udp: set[int] = set()
+        for name in service_names:
+            spec = named.get(name, {})
+            tcp |= set(spec.get("tcp") or [])
+            udp |= set(spec.get("udp") or [])
+        return tcp, udp
+
+    problems = []
+    for type_name, spec in sorted(data["host_types"].items()):
+        role = role_sets.get(type_name)
+        if role is None:
+            continue  # a type with no shipped equivalent, such as the workstation split
+        tcp, udp = implied(spec["services"])
+        invented = sorted(tcp - set(role.get("tcp") or [])) + sorted(
+            f"udp/{p}" for p in udp - set(role.get("udp") or [])
+        )
+        missing = sorted(set(role.get("tcp") or []) - tcp) + sorted(
+            f"udp/{p}" for p in set(role.get("udp") or []) - udp
+        )
+        if invented:
+            problems.append(f"{type_name} opens {invented}, which the evidence does not list")
+        if missing:
+            problems.append(f"{type_name} omits {missing}, which the evidence does list")
+    assert problems == [], "\n  " + "\n  ".join(problems)
+
+
+def test_a_named_service_does_not_silently_widen() -> None:
+    """Picking file sharing must not also open name services.
+
+    The first version bundled 445, 139, 137 and 138 into `SMB`, so every host that ran
+    it opened four ports when the operator asked for one.
+    """
+    loaded = catalogue()
+    assert loaded.services["SMB"].tcp == (445,)
+    assert loaded.services["SMB"].udp == ()
+    assert loaded.services["NetBIOS"].tcp == (139,)
+    assert "not open name services" in loaded.services["NetBIOS"].note
+
+
+def test_the_workstation_split_follows_what_the_note_says() -> None:
+    """ "Windows hosts scored on RDP, Linux on SSH" — so neither runs the other's."""
+    loaded = catalogue()
+    assert loaded.host_types["windows_workstation"].services == ("RDP",)
+    assert loaded.host_types["linux_workstation"].services == ("SSH",)

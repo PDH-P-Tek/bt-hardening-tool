@@ -31,29 +31,29 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClie
         yield test_client
 
 
-def make_estate(client: TestClient, **overrides: str) -> str:
+def make_estate(client: TestClient, **overrides: str) -> None:
     form = {
-        "slug": "team07",
         "team": "42",
         "team_padded": "42",
         "vocabulary": "wan, ws, svrs, dmz",
         "tokens": "bt_wan_, do_",
     }
     form.update(overrides)
-    response = client.post("/estates", data=form, follow_redirects=False)
+    response = client.post("/range/create", data=form, follow_redirects=False)
     assert response.status_code == 303
-    return str(form["slug"])
 
 
 def test_an_empty_install_says_nothing_is_declared(client: TestClient) -> None:
+    """A team has one range, so the front page is its setup rather than a list."""
     body = client.get("/").text
-    assert "No estate declared yet" in body
+    assert "Nothing declared yet" in body
     assert "ships no vocabulary" in body
+    assert "Set up the range" in body
 
 
 def test_declaring_an_estate_writes_the_document(client: TestClient, tmp_path: Path) -> None:
-    slug = make_estate(client)
-    path = tmp_path / "estates" / f"{slug}.yaml"
+    make_estate(client)
+    path = tmp_path / "estates" / "range.yaml"
     assert path.exists(), "the estate file is the durable artefact"
     estate = load_estate(path)
     assert estate.team == 42
@@ -61,9 +61,9 @@ def test_declaring_an_estate_writes_the_document(client: TestClient, tmp_path: P
 
 
 def test_an_enclave_is_named_by_the_operator(client: TestClient, tmp_path: Path) -> None:
-    slug = make_estate(client)
+    make_estate(client)
     response = client.post(
-        f"/estates/{slug}/enclaves",
+        "/range/enclaves",
         data={
             "name": "whatever-they-call-it",
             "fqdn": "fw1.example",
@@ -74,21 +74,21 @@ def test_an_enclave_is_named_by_the_operator(client: TestClient, tmp_path: Path)
         follow_redirects=False,
     )
     assert response.status_code == 303
-    estate = load_estate(tmp_path / "estates" / f"{slug}.yaml")
+    estate = load_estate(tmp_path / "estates" / "range.yaml")
     assert estate.firewalls[0].enclave == "whatever-they-call-it"
     assert estate.firewalls[0].node.credential_ref == "monitor-key"
 
 
 def test_interfaces_can_always_be_typed_in(client: TestClient, tmp_path: Path) -> None:
     """The wizard is the spine. Every step must work without pasting anything."""
-    slug = make_estate(client)
+    make_estate(client)
     client.post(
-        f"/estates/{slug}/enclaves",
+        "/range/enclaves",
         data={"name": "alpha", "platform": "pfsense", "mgmt_address": "10.0.0.1"},
         follow_redirects=False,
     )
     response = client.post(
-        f"/estates/{slug}/enclaves/alpha/interfaces",
+        "/range/enclaves/alpha/interfaces",
         data={
             "ifname": "opt1",
             "role": "svrs",
@@ -98,7 +98,7 @@ def test_interfaces_can_always_be_typed_in(client: TestClient, tmp_path: Path) -
         follow_redirects=False,
     )
     assert response.status_code == 303
-    estate = load_estate(tmp_path / "estates" / f"{slug}.yaml")
+    estate = load_estate(tmp_path / "estates" / "range.yaml")
     interface = estate.firewalls[0].interfaces[0]
     assert (interface.ifname, interface.role) == ("opt1", "svrs")
     assert str(interface.v4) == "192.0.2.1/24"
@@ -108,21 +108,21 @@ def test_importing_a_config_fills_interfaces_in_for_confirmation(
     client: TestClient, tmp_path: Path
 ) -> None:
     """The accelerator. It renders the parse back rather than applying it silently."""
-    slug = make_estate(client)
+    make_estate(client)
     client.post(
-        f"/estates/{slug}/enclaves",
+        "/range/enclaves",
         data={"name": "alpha", "platform": "pfsense", "mgmt_address": "10.0.0.1"},
         follow_redirects=False,
     )
     with (FIXTURE / "do-baseline.xml").open("rb") as handle:
         response = client.post(
-            f"/estates/{slug}/enclaves/alpha/import",
+            "/range/enclaves/alpha/import",
             files={"config": ("do-baseline.xml", handle, "text/xml")},
         )
     assert response.status_code == 200
     assert "check them against the box" in response.text
 
-    estate = load_estate(tmp_path / "estates" / f"{slug}.yaml")
+    estate = load_estate(tmp_path / "estates" / "range.yaml")
     roles = {i.ifname: i.role for i in estate.firewalls[0].interfaces}
     assert roles == {"wan": "wan", "lan": "ws", "opt1": "svrs", "opt2": "dmz"}
     assert estate.firewalls[0].config_version == "23.3"
@@ -132,15 +132,15 @@ def test_an_import_that_cannot_be_placed_says_so_rather_than_guessing(
     client: TestClient,
 ) -> None:
     """An estate whose vocabulary does not cover the file gets told, not guessed at."""
-    slug = make_estate(client, slug="sparse", vocabulary="wan", tokens="")
+    make_estate(client, vocabulary="wan", tokens="")
     client.post(
-        f"/estates/{slug}/enclaves",
+        "/range/enclaves",
         data={"name": "alpha", "platform": "pfsense", "mgmt_address": "10.0.0.1"},
         follow_redirects=False,
     )
     with (FIXTURE / "do-baseline.xml").open("rb") as handle:
         response = client.post(
-            f"/estates/{slug}/enclaves/alpha/import",
+            "/range/enclaves/alpha/import",
             files={"config": ("do-baseline.xml", handle, "text/xml")},
         )
     assert "could not be placed" in response.text
@@ -148,14 +148,14 @@ def test_an_import_that_cannot_be_placed_says_so_rather_than_guessing(
 
 
 def test_a_file_that_is_not_a_config_is_reported_not_swallowed(client: TestClient) -> None:
-    slug = make_estate(client)
+    make_estate(client)
     client.post(
-        f"/estates/{slug}/enclaves",
+        "/range/enclaves",
         data={"name": "alpha", "platform": "pfsense", "mgmt_address": "10.0.0.1"},
         follow_redirects=False,
     )
     response = client.post(
-        f"/estates/{slug}/enclaves/alpha/import",
+        "/range/enclaves/alpha/import",
         files={"config": ("notes.xml", b"<opnsense/>", "text/xml")},
     )
     assert "could not read that file" in response.text
@@ -171,32 +171,31 @@ def test_the_page_loads_no_external_assets(client: TestClient) -> None:
 # --- editing, Phase 9.6 -----------------------------------------------------
 
 
-def with_an_enclave(client: TestClient) -> str:
-    slug = make_estate(client)
+def with_an_enclave(client: TestClient) -> None:
+    make_estate(client)
     client.post(
-        f"/estates/{slug}/enclaves",
+        "/range/enclaves",
         data={"name": "alpha", "platform": "pfsense", "mgmt_address": "10.0.0.1"},
         follow_redirects=False,
     )
     client.post(
-        f"/estates/{slug}/enclaves/alpha/interfaces",
+        "/range/enclaves/alpha/interfaces",
         data={"ifname": "opt1", "role": "svrs", "v4": "192.0.2.1/24", "descr": "typo here"},
         follow_redirects=False,
     )
-    return slug
 
 
 def test_a_mistyped_interface_can_be_corrected_in_the_ui(
     client: TestClient, tmp_path: Path
 ) -> None:
     """The reason this exists: a typo the night before should not mean editing YAML."""
-    slug = with_an_enclave(client)
-    form = client.get(f"/estates/{slug}/edit/interface/alpha/opt1")
+    with_an_enclave(client)
+    form = client.get("/range/edit/interface/alpha/opt1")
     assert form.status_code == 200
     assert "192.0.2.1/24" in form.text, "the form is pre-filled with what is there now"
 
     response = client.post(
-        f"/estates/{slug}/edit/interface/alpha/opt1",
+        "/range/edit/interface/alpha/opt1",
         data={
             "ifname": "opt1",
             "role": "servers",
@@ -207,7 +206,7 @@ def test_a_mistyped_interface_can_be_corrected_in_the_ui(
         follow_redirects=False,
     )
     assert response.status_code == 303
-    estate = load_estate(tmp_path / "estates" / f"{slug}.yaml")
+    estate = load_estate(tmp_path / "estates" / "range.yaml")
     interface = estate.firewalls[0].interfaces[0]
     assert interface.role == "servers"
     assert str(interface.v4) == "192.0.9.1/24"
@@ -217,38 +216,38 @@ def test_an_interface_with_hosts_on_it_is_refused_and_says_why(
     client: TestClient, tmp_path: Path
 ) -> None:
     """Refused in the UI, not just in the model — with the hosts named."""
-    slug = with_an_enclave(client)
+    with_an_enclave(client)
     client.post(
-        f"/estates/{slug}/enclaves/alpha/paste/confirm",
+        "/range/enclaves/alpha/paste/confirm",
         data={"text": "dc01\t192.0.2.5\tDomain controller\n", "keep": ["0"]},
         follow_redirects=False,
     )
     client.post(
-        f"/estates/{slug}/edit/host/alpha/dc01",
+        "/range/edit/host/alpha/dc01",
         data={"hostname": "dc01", "segment_role": "svrs", "v4": "192.0.2.5"},
         follow_redirects=False,
     )
-    response = client.post(f"/estates/{slug}/delete/interface/alpha/opt1", follow_redirects=False)
+    response = client.post("/range/delete/interface/alpha/opt1", follow_redirects=False)
     assert response.status_code == 303
     assert "dc01" in response.headers["location"], "the refusal names what is in the way"
 
-    estate = load_estate(tmp_path / "estates" / f"{slug}.yaml")
+    estate = load_estate(tmp_path / "estates" / "range.yaml")
     assert estate.firewalls[0].interfaces, "nothing was removed"
 
 
 def test_an_empty_interface_is_removed(client: TestClient, tmp_path: Path) -> None:
-    slug = with_an_enclave(client)
-    client.post(f"/estates/{slug}/delete/interface/alpha/opt1", follow_redirects=False)
-    estate = load_estate(tmp_path / "estates" / f"{slug}.yaml")
+    with_an_enclave(client)
+    client.post("/range/delete/interface/alpha/opt1", follow_redirects=False)
+    estate = load_estate(tmp_path / "estates" / "range.yaml")
     assert estate.firewalls[0].interfaces == ()
 
 
 def test_an_enclave_can_be_amended_including_how_to_reach_it(
     client: TestClient, tmp_path: Path
 ) -> None:
-    slug = with_an_enclave(client)
+    with_an_enclave(client)
     client.post(
-        f"/estates/{slug}/edit/enclave/alpha",
+        "/range/edit/enclave/alpha",
         data={
             "enclave": "alpha",
             "fqdn": "fw1.alpha.example",
@@ -260,7 +259,7 @@ def test_an_enclave_can_be_amended_including_how_to_reach_it(
         },
         follow_redirects=False,
     )
-    firewall = load_estate(tmp_path / "estates" / f"{slug}.yaml").firewalls[0]
+    firewall = load_estate(tmp_path / "estates" / "range.yaml").firewalls[0]
     assert firewall.fqdn == "fw1.alpha.example"
     assert str(firewall.node.mgmt_address) == "10.0.0.9"
     assert firewall.node.ssh_user == "analyst"
@@ -268,7 +267,7 @@ def test_an_enclave_can_be_amended_including_how_to_reach_it(
 
 def test_edit_links_are_reachable_from_the_estate_page(client: TestClient) -> None:
     """An edit function nobody can find is not an edit function."""
-    slug = with_an_enclave(client)
-    body = client.get(f"/estates/{slug}").text
-    assert f"/estates/{slug}/edit/enclave/alpha" in body
-    assert f"/estates/{slug}/edit/interface/alpha/opt1" in body
+    with_an_enclave(client)
+    body = client.get("/range").text
+    assert "/range/edit/enclave/alpha" in body
+    assert "/range/edit/interface/alpha/opt1" in body

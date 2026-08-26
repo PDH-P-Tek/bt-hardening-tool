@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+{% block body %}
+<h1>Range — team {{ estate.team }}</h1>
+<p class="sub">{{ estate.firewalls|length }} enclave(s) · {{ host_count }} host(s) ·
+  {{ estate.all_nodes()|length }} managed device(s)</p>
+
+<div class="tiles">
+  <a class="tile" href="/range/topology">
+    <span class="count">{{ estate.firewalls|length }}</span>
+    <h3>Topology</h3>
+    <p>The range drawn. Open a firewall for its segments, a segment for its machines.</p>
+  </a>
+  <a class="tile" href="/services">
+    <span class="count">{{ catalogue.services|length }}</span>
+    <h3>Service templates</h3>
+    <p>What a machine can run, and which ports that means. Add your own.</p>
+  </a>
+  <a class="tile" href="/services#types">
+    <span class="count">{{ catalogue.host_types|length }}</span>
+    <h3>Host templates</h3>
+    <p>Kinds of machine and the services each one runs by default.</p>
+  </a>
+  <a class="tile" href="/range/monitor">
+    <span class="count">{{ estate.all_nodes()|length }}</span>
+    <h3>Monitor</h3>
+    <p>What the collector last saw, on the same picture.</p>
+  </a>
+</div>
+
+<div class="panel">
+<h2>Range settings</h2>
+<table>
+  <tr><th>team</th><td>{{ estate.team }}</td>
+      <th>as written in names</th><td>{{ estate.team_padded }}</td></tr>
+  <tr><th>segment names</th><td colspan="3">
+    {% for role in estate.role_vocabulary %}<span class="tag">{{ role }}</span> {% endfor %}
+    {% if not estate.role_vocabulary %}<span class="tag warn">none declared</span>{% endif %}
+  </td></tr>
+</table>
+<p style="margin-top:12px"><a class="btn quiet" href="/range/settings">Edit range settings</a></p>
+</div>
+
+{% for firewall in estate.firewalls %}
+<div class="panel">
+<h2>{{ firewall.enclave }}</h2>
+<p class="sub">
+  {{ firewall.fqdn or "no FQDN" }} · {{ firewall.node.platform.value }} at
+  <code>{{ firewall.node.mgmt_address }}</code>
+  {% if firewall.side %} · side <strong>{{ firewall.side }}</strong>{% endif %}
+</p>
+<p>
+  <a class="btn small" href="/range/edit/enclave/{{ firewall.enclave }}">Edit enclave</a>
+  <a class="btn small quiet" href="/range/policy/{{ firewall.enclave }}">Declare policy</a>
+  <a class="btn small quiet" href="/range/enclaves/{{ firewall.enclave }}/paste">Paste the annex</a>
+  <a class="btn small quiet" href="/range/review/{{ firewall.enclave }}">Review and export</a>
+</p>
+
+{% if firewall.interfaces %}
+<table>
+  <tr><th>ifname</th><th>segment</th><th>address</th><th>description</th><th></th><th></th></tr>
+  {% for i in firewall.interfaces %}
+  <tr>
+    <td><code>{{ i.ifname }}</code></td>
+    <td>{% if i.role.startswith("other:") %}<span class="tag warn">{{ i.role }}</span>
+        {% else %}<span class="tag">{{ i.role }}</span>{% endif %}</td>
+    <td><code>{{ i.v4 or "" }}{% if i.v6 %}<br>{{ i.v6 }}{% endif %}</code></td>
+    <td>{{ i.descr }}</td>
+    <td>{% if i.is_lan %}<span class="tag warn">anti-lockout binds here</span>{% endif %}</td>
+    <td><a class="btn small quiet" href="/range/edit/interface/{{ firewall.enclave }}/{{ i.ifname }}">Edit</a></td>
+  </tr>
+  {% endfor %}
+</table>
+{% else %}
+<div class="note warn">No interfaces declared. Type them in below, or import a
+configuration to fill them in for confirmation.</div>
+{% endif %}
+
+{% if firewall.hosts or firewall.host_groups %}
+<h2>Hosts</h2>
+<table>
+  <tr><th>name</th><th>OS</th><th>address</th><th>segment</th><th>type</th><th>services</th><th></th></tr>
+  {% for g in firewall.host_groups %}
+  <tr>
+    <td><strong>{{ g.name_prefix }}</strong> <span class="tag">{{ g.count }} hosts</span></td>
+    <td>{{ g.os }}</td>
+    <td><code>{{ g.v4_start or "" }}{% if g.count > 1 %} +{{ g.count - 1 }}{% endif %}</code></td>
+    <td>{{ g.segment_role }}</td><td>{{ g.host_type }}</td><td>{{ g.services|join(", ") }}</td>
+    <td><a class="btn small quiet" href="/range/edit/group/{{ firewall.enclave }}/{{ g.name_prefix }}">Edit</a></td>
+  </tr>
+  {% endfor %}
+  {% for h in firewall.hosts %}
+  <tr>
+    <td>{{ h.hostname }}{% if h.out_of_bounds %} <span class="tag warn">out of bounds</span>{% endif %}</td>
+    <td>{{ h.os }}</td><td><code>{{ h.v4 or "" }}</code></td>
+    <td>{{ h.segment_role }}</td><td>{{ h.service_role }}</td><td>{{ h.services|join(", ") }}</td>
+    <td><a class="btn small quiet" href="/range/edit/host/{{ firewall.enclave }}/{{ h.hostname }}">Edit</a></td>
+  </tr>
+  {% endfor %}
+</table>
+{% endif %}
+
+<div class="row">
+<div>
+<h2>Add an interface</h2>
+<form method="post" action="/range/enclaves/{{ firewall.enclave }}/interfaces">
+  <div class="row">
+    <div><label>ifname</label><input name="ifname" placeholder="opt1" required></div>
+    <div><label>segment name</label><input name="role" placeholder="svrs" required></div>
+  </div>
+  <div class="row">
+    <div><label>IPv4 with prefix</label><input name="v4" placeholder="25.42.10.1/24"></div>
+    <div><label>IPv6 with prefix</label><input name="v6" placeholder="fd81:25:42:10::1/64"></div>
+  </div>
+  <label>description</label><input name="descr">
+  <button class="btn" type="submit">Add interface</button>
+</form>
+</div>
+<div>
+<h2>Import a configuration</h2>
+<p class="sub">An accelerator, never a shortcut past you: interfaces are filled in from
+the file and shown above for confirmation. Only <code>&lt;aliases&gt;</code>,
+<code>&lt;filter&gt;</code> and <code>&lt;nat&gt;</code> are read, plus a short fact
+list. Nothing else is retained.</p>
+<form method="post" action="/range/enclaves/{{ firewall.enclave }}/import"
+      enctype="multipart/form-data">
+  <label>pfSense configuration or section export</label>
+  <input type="file" name="config" accept=".xml" required>
+  <button class="btn" type="submit">Import and show me</button>
+</form>
+</div>
+</div>
+</div>
+{% endfor %}
+
+<div class="panel">
+<h2>Add an enclave</h2>
+<p class="sub">Its name is yours. The tool has no list of valid enclaves.</p>
+<form method="post" action="/range/enclaves">
+  <div class="row">
+    <div><label>enclave name</label><input name="name" placeholder="do" required></div>
+    <div><label>firewall FQDN</label><input name="fqdn" placeholder="fw1.do.42.dcm.ex"></div>
+  </div>
+  <div class="row">
+    <div><label>platform</label>
+      <select name="platform">
+        {% for p in platforms %}<option value="{{ p }}">{{ p }}</option>{% endfor %}
+      </select></div>
+    <div><label>management address</label><input name="mgmt_address" placeholder="25.42.0.10" required></div>
+    <div><label>credential name (never the credential)</label>
+      <input name="credential_ref" placeholder="monitor-key"></div>
+  </div>
+  <button class="btn" type="submit">Add enclave</button>
+</form>
+</div>
+{% endblock %}
