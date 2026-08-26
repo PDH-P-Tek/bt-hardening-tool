@@ -3,7 +3,7 @@
 {% block body %}
 <h1>{{ slug }} — topology</h1>
 <p class="sub">Click a firewall to open its segments, then a segment to see the machines
-on it. This is a view: to change the estate, <a href="/range">edit it</a>.</p>
+on it. To change anything, go to <a href="/range">Range</a>.</p>
 
 <style>
 .topology{display:flex;gap:18px;align-items:flex-start;flex-wrap:wrap}
@@ -67,8 +67,7 @@ svg .badge{font-size:9.5px;fill:var(--muted)}
   {% endif %}
 </form>
 {% if diagram.hidden_by_filter %}
-<div class="note warn">{{ diagram.hidden_by_filter }} host(s) hidden by the filter. A
-filtered view is not the estate — clear it before concluding anything is missing.</div>
+<div class="note warn">{{ diagram.hidden_by_filter }} host(s) hidden by the filter.</div>
 {% endif %}
 <div style="font-size:12.5px">
   Open everything for:

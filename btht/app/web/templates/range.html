@@ -31,7 +31,7 @@
   </a>
   {% endfor %}
   <a class="tile add {% if selected_enclave == '__new' %}here{% endif %}" href="/range?enclave=__new">
-    <span class="count">+</span><h3>Add an enclave</h3><p>Its name is yours.</p>
+    <span class="count">+</span><h3>Add an enclave</h3><p>A firewall and its segments</p>
   </a>
 </div>
 
@@ -73,7 +73,7 @@
   {% endfor %}
   <a class="tile add {% if selected_interface == '__new' %}here{% endif %}"
      href="/range?enclave={{ firewall.enclave }}&interface=__new">
-    <span class="count">+</span><h3>Add an interface</h3><p>Assign it a segment type.</p>
+    <span class="count">+</span><h3>Add an interface</h3><p>One port on this firewall</p>
   </a>
 </div>
 
@@ -101,9 +101,8 @@
 </div>
 <div>
 <h3 style="font-size:14px">Or import a configuration</h3>
-<p class="sub">Interfaces are filled in from the file and shown for confirmation. Only
-<code>&lt;aliases&gt;</code>, <code>&lt;filter&gt;</code> and <code>&lt;nat&gt;</code>
-are read, plus a short fact list. Nothing else is retained.</p>
+<p class="sub">Fills in the interfaces from a pfSense config for you to check. Reads
+only the alias, rule and NAT sections — no credentials are stored.</p>
 <form method="post" action="/range/enclaves/{{ firewall.enclave }}/import"
       enctype="multipart/form-data">
   <input type="file" name="config" accept=".xml" required>
@@ -183,7 +182,7 @@ are read, plus a short fact list. Nothing else is retained.</p>
 
 <div class="panel">
 <h3 style="font-size:14px;margin-top:0">Add many of one kind</h3>
-<p class="sub">Ten workstations is one declaration, not ten.</p>
+<p class="sub">Named in sequence and addressed consecutively.</p>
 <form method="post" action="/range/enclaves/{{ firewall.enclave }}/groups">
   <input type="hidden" name="segment_role" value="{{ interface.role }}">
   <input type="hidden" name="ifname" value="{{ interface.ifname }}">

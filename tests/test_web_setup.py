@@ -47,8 +47,8 @@ def test_an_empty_install_says_nothing_is_declared(client: TestClient) -> None:
     """A team has one range, so the front page is its setup rather than a list."""
     body = client.get("/").text
     assert "Nothing declared yet" in body
-    assert "ships no vocabulary" in body
     assert "Set up the range" in body
+    assert "add each" in body, "and it says what to do about it"
 
 
 def test_declaring_an_estate_writes_the_document(client: TestClient, tmp_path: Path) -> None:

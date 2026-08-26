@@ -2,13 +2,13 @@
 {% set page = "range" %}
 {% block body %}
 <h1>Range settings</h1>
-<p class="sub">Four things, and only the first two are ever needed.</p>
+<p class="sub">Only the team number and segment types are needed to get started.</p>
 
 <div class="panel">
 <form method="post" action="/range/settings">
   <label for="team_name">What the team calls itself</label>
   <input id="team_name" name="team_name" value="{{ estate.team_name }}" placeholder="BT14">
-  <div class="sub" style="margin-top:3px">Display only. Nothing keys on it.</div>
+  <div class="sub" style="margin-top:3px">Shown in the page heading.</div>
 
   <label for="team">Team number</label>
   <input id="team" name="team" type="number" min="0" value="{{ estate.team }}" required>

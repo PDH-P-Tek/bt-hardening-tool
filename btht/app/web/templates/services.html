@@ -2,8 +2,8 @@
 {% set page = "services" %}
 {% block body %}
 <h1>Services and host types</h1>
-<p class="sub">What the tool knows a machine can run. Shipped entries are suggestions;
-anything bespoke is yours to define, and neither is more real than the other.</p>
+<p class="sub">Services define which ports a machine needs open. Host templates group
+them, so picking a template opens the right set.</p>
 
 <div class="panel">
 <h2>Services — {{ services|length }}</h2>
@@ -27,8 +27,7 @@ anything bespoke is yours to define, and neither is more real than the other.</p
 
 <div class="panel">
 <h2>Add a service</h2>
-<p class="sub">Every estate has something bespoke on an odd port. A catalogue that only
-knows well-known ports makes the operator lie about what they are running.</p>
+<p class="sub">For anything on a non-standard port.</p>
 <form method="post" action="/services/new">
   <div class="row">
     <div><label>name, as you would say it</label><input name="name" required></div>

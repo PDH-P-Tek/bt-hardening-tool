@@ -2,8 +2,8 @@
 {% set page = "range" %}
 {% block body %}
 <h1>{{ enclave }} — review before export</h1>
-<p class="sub">Nothing leaves without passing through here. Blocking findings cannot be
-acknowledged away; warnings are acknowledged one at a time, on purpose.</p>
+<p class="sub">Blocking findings must be fixed. Warnings must each be acknowledged
+before the checklist can be exported.</p>
 
 <div class="panel">
   <h2>Can this be exported?</h2>
@@ -18,8 +18,7 @@ acknowledged away; warnings are acknowledged one at a time, on purpose.</p>
 {% if gate.blocking %}
 <div class="panel">
 <h2>Blocking — {{ gate.blocking|length }}</h2>
-<p class="sub">Each of these is a way for this ruleset to be wrong while looking right.
-There is no override; fix the cause.</p>
+<p class="sub">These cannot be acknowledged. Fix the cause and come back.</p>
 {% for finding in gate.blocking %}
   <div class="note err"><strong>{{ finding.id }}</strong> — {{ finding.message }}</div>
 {% endfor %}

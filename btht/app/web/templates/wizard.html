@@ -3,8 +3,7 @@
 {% block body %}
 {% if segment %}<h1>{{ enclave }} — segment {{ step + 1 }} of {{ total }}</h1>
 {% else %}<h1>{{ enclave }} — egress</h1>{% endif %}
-<p class="sub">One segment at a time. Everything here is typed; nothing is required to
-be pasted, because the annex format changes and a paste will sometimes fail.</p>
+<p class="sub">One segment at a time. Declare what has to keep working on each.</p>
 
 <div class="panel">
   <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">
@@ -85,9 +84,9 @@ be pasted, because the annex format changes and a paste will sometimes fail.</p>
   </form>
 {% else %}
   <h2>Egress</h2>
-  <p class="sub">What may leave this enclave. A default-deny is good practice and is
-  also what silently severs an agent from its server — declared dependencies are
-  emitted above this deny automatically.</p>
+  <p class="sub">What may leave this enclave. Anything you have declared as a
+  cross-enclave dependency is allowed above this deny automatically — without that, a
+  default-deny cuts agents off from their server and they fail quietly.</p>
   <form method="post" action="/range/policy/{{ enclave }}/egress">
     <label>default</label>
     <select name="default">

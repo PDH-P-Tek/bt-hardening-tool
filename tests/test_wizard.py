@@ -196,7 +196,8 @@ def test_egress_is_a_step_of_its_own(client: TestClient, estate_file: Path) -> N
 def test_the_egress_step_states_the_trap(client: TestClient) -> None:
     """A default-deny is good practice and is also what silently severs an agent."""
     body = client.get("/range/policy/alpha?step=egress").text
-    assert "silently severs" in body
+    assert "fail quietly" in body
+    assert "cross-enclave dependency" in body
 
 
 # --- the file underneath ---------------------------------------------------

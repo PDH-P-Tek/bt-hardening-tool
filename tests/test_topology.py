@@ -285,8 +285,11 @@ def test_a_view_is_a_link_that_can_be_sent_to_someone(client: TestClient) -> Non
     assert "fw1.alpha.example" in body, "the focused detail is rendered server-side"
 
 
-def test_the_page_says_it_is_a_view(client: TestClient) -> None:
-    assert "This is a view" in client.get("/range/topology").text
+def test_the_page_sends_you_elsewhere_to_change_anything(client: TestClient) -> None:
+    """It must never read as a second place the range can be edited."""
+    body = client.get("/range/topology").text
+    assert "To change anything, go to" in body
+    assert 'href="/range"' in body
 
 
 def test_the_page_loads_no_external_assets(client: TestClient) -> None:
