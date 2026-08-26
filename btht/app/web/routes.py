@@ -46,6 +46,7 @@ from btht.app.model.estate import (
     Estate,
     Firewall,
     Host,
+    HostGroup,
     Node,
     Platform,
     SourceOfTruth,
@@ -116,8 +117,28 @@ def home(request: Request) -> HTMLResponse:
 def _range_page(
     request: Request, path: Path, messages: list[tuple[str, str]] | None = None
 ) -> HTMLResponse:
+    """The range, one level at a time.
+
+    Enclaves, then the interfaces of the one selected, then the hosts on the interface
+    selected. The form for adding to the level you are looking at appears beside it,
+    so adding an interface is never offered while you are looking at hosts.
+    """
     estate = load_estate(path)
     catalogue = load_services(SERVICE_CATALOGUE)
+    params = request.query_params
+    enclave = params.get("enclave", "")
+    ifname = params.get("interface", "")
+
+    firewall = estate.firewall(enclave) if enclave else None
+    interface = None
+    hosts: tuple[Host, ...] = ()
+    groups: tuple[HostGroup, ...] = ()
+    if firewall is not None and ifname:
+        interface = next((i for i in firewall.interfaces if i.ifname == ifname), None)
+        if interface is not None:
+            hosts = tuple(h for h in firewall.hosts if h.segment_role == interface.role)
+            groups = tuple(g for g in firewall.host_groups if g.segment_role == interface.role)
+
     return render(
         request,
         "range.html",
@@ -126,6 +147,14 @@ def _range_page(
         catalogue=catalogue,
         platforms=[p.value for p in Platform],
         host_count=sum(len(f.all_hosts(catalogue)) for f in estate.firewalls),
+        selected_enclave=enclave,
+        selected_interface=ifname,
+        firewall=firewall,
+        interface=interface,
+        hosts=hosts,
+        groups=groups,
+        host_types=sorted(catalogue.host_types),
+        enclave_tokens=convention_of(path).enclave_tokens,
         messages=messages
         or (
             [(request.query_params.get("k", "ok"), request.query_params["m"])]
@@ -682,8 +711,11 @@ def _save(estate: Estate, path: Path) -> None:
     save_estate(estate, path, convention_of(path).enclave_tokens, side_rules_of(path))
 
 
-def _back(message: str = "", kind: str = "ok") -> RedirectResponse:
-    suffix = f"?m={message}&k={kind}" if message else ""
+def _back(message: str = "", kind: str = "ok", where: str = "") -> RedirectResponse:
+    parts = [where] if where else []
+    if message:
+        parts.append(f"m={message}&k={kind}")
+    suffix = "?" + "&".join(parts) if parts else ""
     return RedirectResponse(f"/range{suffix}", status_code=303)
 
 
@@ -1313,3 +1345,97 @@ def save_range_settings(
     )
     save_estate(estate, path, enclave_tokens=_split(tokens), sides=side_rules_of(path))
     return _back("range settings saved")
+
+
+@router.post("/range/enclaves/{enclave}/hosts")
+def add_host(
+    enclave: str,
+    hostname: str = Form(...),
+    os: str = Form(""),
+    v4: str = Form(""),
+    v6: str = Form(""),
+    segment_role: str = Form(""),
+    host_type: str = Form(""),
+    services: str = Form(""),
+    out_of_bounds: str = Form(""),
+    ifname: str = Form(""),
+) -> RedirectResponse:
+    """One machine, typed in. The paste accelerator is not the only way to add a host."""
+    from dataclasses import replace as dc_replace
+
+    path = estate_path()
+    estate = load_estate(path)
+    catalogue = load_services(SERVICE_CATALOGUE)
+    chosen = _split(services)
+    if not chosen and host_type:
+        host_type_entry = catalogue.host_types.get(host_type)
+        chosen = tuple(host_type_entry.services) if host_type_entry else ()
+
+    host = Host(
+        hostname=hostname.strip(),
+        os=os.strip(),
+        v4=parse_address(v4),
+        v6=parse_address(v6),
+        segment_role=segment_role.strip(),
+        service_role=host_type.strip(),
+        services=chosen,
+        out_of_bounds=out_of_bounds == "yes",
+        source_of_truth=SourceOfTruth.WIZARD,
+    )
+    estate = dc_replace(
+        estate,
+        firewalls=tuple(
+            dc_replace(f, hosts=(*f.hosts, host)) if f.enclave == enclave else f
+            for f in estate.firewalls
+        ),
+    )
+    _save(estate, path)
+    return _back(f"{host.hostname} added", where=f"enclave={enclave}&interface={ifname}")
+
+
+@router.post("/range/enclaves/{enclave}/groups")
+def add_group(
+    enclave: str,
+    name_prefix: str = Form(...),
+    count: int = Form(1),
+    first_index: int = Form(1),
+    index_width: int = Form(2),
+    os: str = Form(""),
+    host_type: str = Form(""),
+    segment_role: str = Form(""),
+    v4_start: str = Form(""),
+    v6_prefix: str = Form(""),
+    ifname: str = Form(""),
+) -> RedirectResponse:
+    """Many machines of one kind. Ten workstations is one declaration, not ten."""
+    from dataclasses import replace as dc_replace
+
+    path = estate_path()
+    try:
+        group = HostGroup(
+            name_prefix=name_prefix.strip(),
+            count=count,
+            first_index=first_index,
+            index_width=index_width,
+            os=os.strip(),
+            host_type=host_type.strip(),
+            segment_role=segment_role.strip(),
+            v4_start=parse_address(v4_start),
+            v6_prefix=v6_prefix.strip(),
+        )
+    except ValueError as exc:
+        return _back(str(exc), "err", where=f"enclave={enclave}&interface={ifname}")
+
+    estate = load_estate(path)
+    estate = dc_replace(
+        estate,
+        firewalls=tuple(
+            dc_replace(f, host_groups=(*f.host_groups, group)) if f.enclave == enclave else f
+            for f in estate.firewalls
+        ),
+    )
+    _save(estate, path)
+    return _back(
+        f"{group.count} × {group.name_prefix} added",
+        where=f"enclave={enclave}&interface={ifname}",
+    )

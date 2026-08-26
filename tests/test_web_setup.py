@@ -265,9 +265,94 @@ def test_an_enclave_can_be_amended_including_how_to_reach_it(
     assert firewall.node.ssh_user == "analyst"
 
 
-def test_edit_links_are_reachable_from_the_estate_page(client: TestClient) -> None:
-    """An edit function nobody can find is not an edit function."""
+def test_the_range_page_drills_down_one_level_at_a_time(client: TestClient) -> None:
+    """Enclaves, then that enclave's interfaces, then that interface's hosts.
+
+    An edit function nobody can find is not an edit function, so each level exposes
+    the edit for what it is showing — and only for what it is showing.
+    """
     with_an_enclave(client)
-    body = client.get("/range").text
-    assert "/range/edit/enclave/alpha" in body
-    assert "/range/edit/interface/alpha/opt1" in body
+
+    top = client.get("/range").text
+    assert "/range?enclave=alpha" in top, "an enclave tile to click"
+    assert "/range/edit/interface/alpha/opt1" not in top, "interfaces are one level down"
+
+    enclave = client.get("/range?enclave=alpha").text
+    assert "/range/edit/enclave/alpha" in enclave
+    assert "/range?enclave=alpha&interface=opt1" in enclave
+
+    interface = client.get("/range?enclave=alpha&interface=opt1").text
+    assert "/range/edit/interface/alpha/opt1" in interface
+    assert "Add one machine" in interface, "the add form for the level being viewed"
+    assert "Add many of one kind" in interface
+
+
+def test_the_add_form_matches_the_level_being_viewed(client: TestClient) -> None:
+    """Adding an interface is not offered while looking at hosts, and vice versa."""
+    with_an_enclave(client)
+    hosts_level = client.get("/range?enclave=alpha&interface=opt1").text
+    assert "Add one machine" in hosts_level
+    assert "Add an interface to alpha" not in hosts_level
+
+    interfaces_level = client.get("/range?enclave=alpha&interface=__new").text
+    assert "Add an interface to alpha" in interfaces_level
+
+
+def test_a_machine_can_be_typed_in_without_pasting_an_annex(
+    client: TestClient, tmp_path: Path
+) -> None:
+    """The paste accelerator is not the only way a host gets declared."""
+    with_an_enclave(client)
+    response = client.post(
+        "/range/enclaves/alpha/hosts",
+        data={
+            "hostname": "dc01",
+            "os": "Windows Server 2022",
+            "v4": "192.0.2.5",
+            "segment_role": "svrs",
+            "host_type": "domain_controller",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    host = load_estate(tmp_path / "estates" / "range.yaml").firewalls[0].hosts[0]
+    assert host.hostname == "dc01"
+    assert host.os == "Windows Server 2022"
+    assert "RPC dynamic range" in host.services, "the template's services came with it"
+
+
+def test_many_machines_of_one_kind_are_one_declaration(
+    client: TestClient, tmp_path: Path
+) -> None:
+    with_an_enclave(client)
+    client.post(
+        "/range/enclaves/alpha/groups",
+        data={
+            "name_prefix": "ws1",
+            "count": "10",
+            "first_index": "1",
+            "index_width": "2",
+            "os": "Windows 10 22H2",
+            "host_type": "windows_workstation",
+            "segment_role": "svrs",
+            "v4_start": "192.0.2.10",
+            "v6_prefix": "2001:db8:2",
+        },
+        follow_redirects=False,
+    )
+    firewall = load_estate(tmp_path / "estates" / "range.yaml").firewalls[0]
+    machines = firewall.all_hosts()
+    assert [m.hostname for m in machines][:2] == ["ws101", "ws102"]
+    assert len(machines) == 10
+    assert str(machines[9].v4) == "192.0.2.19"
+    assert str(machines[9].v6) == "2001:db8:2::19", "the v6 mirrors the v4 octet"
+
+
+def test_an_implausible_group_is_refused_with_a_reason(client: TestClient) -> None:
+    with_an_enclave(client)
+    response = client.post(
+        "/range/enclaves/alpha/groups",
+        data={"name_prefix": "ws", "count": "4000", "segment_role": "svrs"},
+        follow_redirects=False,
+    )
+    assert "typo" in response.headers["location"]
