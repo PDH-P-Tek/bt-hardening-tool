@@ -7,7 +7,7 @@ on something outside the code.
 **This does not replace those lists.** Every step cites its source, and the source
 stays authoritative on *what* the step must do. This file is authoritative on *when*.
 
-Status: **Phases 0–3 complete.** The generator produces a Tier 1 checklist. Phase 4 next — triage, validators, diff gate.
+Status: **Phases 0–4 complete.** 31 validators, the diff gate, and export refused until it opens. Phase 5 next — the monitor core.
 
 ---
 
@@ -103,10 +103,10 @@ processes. If it fails, it fails now, before more code depends on emission.
 
 | # | Step | Source | Done when |
 |---|---|---|---|
-| 4.1 | Triage modal, all four states | §6.3 | Every item reaches a role and disposition; `unknown` blocks export |
-| 4.2 | Validators — blocking set (14 IDs) | §8 | One golden test per ID: fires on its case, silent on the clean baseline |
-| 4.3 | Validators — warnings and info | §8 | As above; warnings require individual acknowledgement |
-| 4.4 | Diff view, then unlock export | §9 | No export path exists that bypasses it |
+| 4.1 | ✅ Triage modal, all four states | §6.3 | Every item reaches a role and disposition; `unknown` blocks export |
+| 4.2 | ✅ Validators — blocking set (14 IDs) | §8 | One golden test per ID: fires on its case, silent on the clean baseline |
+| 4.3 | ✅ Validators — warnings and info | §8 | As above; warnings require individual acknowledgement |
+| 4.4 | ✅ Diff view, then unlock export | §9 | No export path exists that bypasses it |
 
 **Also here:** one regression case per `EVIDENCE.md` finding E1–E10.
 

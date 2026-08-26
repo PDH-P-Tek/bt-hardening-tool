@@ -325,3 +325,43 @@ def test_a_subnet_with_no_declared_interface_is_called_out(client: TestClient) -
         data={"text": "Storage\t10.10.10.0/24\t\tSAN segment\n"},
     ).text
     assert "no declared interface on this subnet" in body
+
+
+# --- review and export gate, Phase 4.1 and 4.4 ------------------------------
+
+
+def _declare_a_generatable_estate(client: TestClient) -> None:
+    """Enough policy for the generator to run: it refuses without these."""
+    client.post(
+        "/estates/team42/policy/alpha/services",
+        data={
+            "step": "0",
+            "segment": "users",
+            "name": "RDP",
+            "protocol": "tcp",
+            "ports": "3389",
+            "from_any": "yes",
+        },
+        follow_redirects=False,
+    )
+
+
+def test_the_review_page_refuses_rather_than_generating_something_plausible(
+    client: TestClient,
+) -> None:
+    """No management alias declared: the generator refuses and the page says why."""
+    _declare_a_generatable_estate(client)
+    body = client.get("/estates/team42/review/alpha").text
+    assert "Refusing to generate" in body
+    assert "locks itself out" in body
+
+
+def test_export_is_refused_while_the_gate_is_shut(client: TestClient) -> None:
+    """Checked in the endpoint, not only hidden in the template.
+
+    A gate that only hides a button is not a gate — it is a suggestion.
+    """
+    _declare_a_generatable_estate(client)
+    response = client.post("/estates/team42/review/alpha/export", follow_redirects=False)
+    assert response.status_code == 409, "a refusal must read as a refusal, not a crash"
+    assert "Refusing to generate" in response.text

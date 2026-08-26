@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block nav %} / <a href="/estates/{{ slug }}">{{ slug }}</a> / <strong>{{ enclave }} review</strong>{% endblock %}
+{% block body %}
+<h1>{{ enclave }} — review before export</h1>
+<p class="sub">Nothing leaves without passing through here. Blocking findings cannot be
+acknowledged away; warnings are acknowledged one at a time, on purpose.</p>
+
+<div class="panel">
+  <h2>Can this be exported?</h2>
+  <div class="note {% if gate.may_export %}ok{% else %}err{% endif %}">{{ gate.reason }}</div>
+  {% if gate.may_export %}
+  <form method="post" action="/estates/{{ slug }}/review/{{ enclave }}/export">
+    <button type="submit">Export the checklist</button>
+  </form>
+  {% endif %}
+</div>
+
+{% if gate.blocking %}
+<div class="panel">
+<h2>Blocking — {{ gate.blocking|length }}</h2>
+<p class="sub">Each of these is a way for this ruleset to be wrong while looking right.
+There is no override; fix the cause.</p>
+{% for finding in gate.blocking %}
+  <div class="note err"><strong>{{ finding.id }}</strong> — {{ finding.message }}</div>
+{% endfor %}
+</div>
+{% endif %}
+
+{% if gate.warnings %}
+<div class="panel">
+<h2>Warnings — {{ gate.unacknowledged|length }} of {{ gate.warnings|length }} outstanding</h2>
+<table>
+  <tr><th>id</th><th>finding</th><th></th></tr>
+  {% for finding in gate.warnings %}
+  <tr>
+    <td class="mono">{{ finding.id }}</td>
+    <td>{{ finding.message }}</td>
+    <td>
+      {% if keys[loop.index0] in gate.acknowledged %}
+        <span class="tag">acknowledged</span>
+      {% else %}
+      <form method="post" action="/estates/{{ slug }}/review/{{ enclave }}/acknowledge">
+        <input type="hidden" name="key" value="{{ keys[loop.index0] }}">
+        <button class="quiet" type="submit">Acknowledge this one</button>
+      </form>
+      {% endif %}
+    </td>
+  </tr>
+  {% endfor %}
+</table>
+</div>
+{% endif %}
+
+{% if info %}
+<div class="panel">
+<h2>For information</h2>
+{% for finding in info %}<div class="note">{{ finding.id }} — {{ finding.message }}</div>{% endfor %}
+</div>
+{% endif %}
+
+<div class="panel">
+<h2>What changes — {{ diff.counts.added }} added, {{ diff.counts.kept }} kept,
+  {{ diff.counts.removed }} removed</h2>
+<table>
+  <tr><th>change</th><th>action</th><th>rule</th><th>what it is for</th></tr>
+  {% for change in diff.removed %}
+  <tr><td><span class="tag warn">removed</span></td><td><strong>{{ change.action }}</strong></td>
+      <td class="mono">{{ change.description }}</td><td>{{ change.intent }}</td></tr>
+  {% endfor %}
+  {% for change in diff.added %}
+  <tr><td><span class="tag">added</span></td><td><strong>{{ change.action }}</strong></td>
+      <td class="mono">{{ change.description }}</td><td>{{ change.intent }}</td></tr>
+  {% endfor %}
+  {% for change in diff.kept %}
+  <tr><td>kept</td><td><strong>{{ change.action }}</strong></td>
+      <td class="mono">{{ change.description }}</td><td>{{ change.intent }}</td></tr>
+  {% endfor %}
+</table>
+</div>
+{% endblock %}

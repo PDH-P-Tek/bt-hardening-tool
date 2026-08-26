@@ -24,7 +24,13 @@ from btht.app.generate.dualstack import verdict_for
 from btht.app.ingest.fingerprint import strict_fingerprint
 from btht.app.ingest.isa import Catalogue, required_ports
 from btht.app.model.estate import Firewall
-from btht.app.model.policy import EgressPolicy, FirewallPolicy, Policy, Selector
+from btht.app.model.policy import (
+    EgressPolicy,
+    FirewallPolicy,
+    Policy,
+    Selector,
+    ServiceRule,
+)
 from btht.app.model.rules import (
     Action,
     Alias,
@@ -77,6 +83,12 @@ class GeneratedRule:
     """One line of plain English. The operator reads this, not the XML."""
 
     preserved: bool = False
+    pair_key: str = ""
+    """Set when a rule is one half of a deliberately emitted address-family pair.
+
+    Without it, emitting the pair correctly and then warning about each half reads as
+    two faults where there are none — and a warning that is wrong twice is a warning
+    people stop reading."""
 
     @property
     def description(self) -> str:
@@ -255,6 +267,7 @@ def build_floating(
                                 role=Role.SCORING,
                             ),
                             block=SCORING,
+                            pair_key=f"scoring:{host.hostname}:{proto}:{port}",
                             intent=f"{host.hostname} {proto}"
                             + (f"/{port}" if port else "")
                             + f" on {'IPv6' if address.version == 6 else 'IPv4'}"
@@ -277,27 +290,32 @@ def build_floating(
     # 4 — out of bounds. Ingress and egress both, because their outbound path is a
     # scored obligation and they sit inside a segment somebody is about to tighten.
     for host in firewall.hosts:
-        if not host.out_of_bounds or host.v4 is None:
+        if not host.out_of_bounds:
             continue
-        for direction, source, destination in (
-            (Direction.IN, AnyEndpoint(), HostAddress(host.v4)),
-            (Direction.OUT, HostAddress(host.v4), AnyEndpoint()),
-        ):
-            out.append(
-                GeneratedRule(
-                    rule=_quick(
-                        Action.PASS,
-                        every,
-                        direction=direction,
-                        source=source,
-                        destination=destination,
-                        role=Role.OUT_OF_BOUNDS,
-                    ),
-                    block=OUT_OF_BOUNDS,
-                    intent=f"{host.hostname} is out of bounds and must keep working "
-                    f"{'inbound' if direction is Direction.IN else 'outbound'} — DO NOT REMOVE",
+        addresses = [a for a in (host.v4, host.v6) if a is not None]
+        for address in addresses:
+            family_label = f"IPv{address.version}"
+            for direction, source, destination in (
+                (Direction.IN, AnyEndpoint(), HostAddress(address)),
+                (Direction.OUT, HostAddress(address), AnyEndpoint()),
+            ):
+                way = "inbound" if direction is Direction.IN else "outbound"
+                out.append(
+                    GeneratedRule(
+                        rule=_quick(
+                            Action.PASS,
+                            every,
+                            direction=direction,
+                            source=source,
+                            destination=destination,
+                            role=Role.OUT_OF_BOUNDS,
+                        ),
+                        block=OUT_OF_BOUNDS,
+                        pair_key=f"oob:{host.hostname}:{way}",
+                        intent=f"{host.hostname} is out of bounds and must keep working "
+                        f"{way} on {family_label} — DO NOT REMOVE",
+                    )
                 )
-            )
 
     # 5 — essential services. Without these above a deny, DNS, NTP and IPv6
     # neighbour discovery die silently and nothing in the ruleset looks wrong.
@@ -355,11 +373,32 @@ def build_floating(
     return tuple(out), tuple(warnings)
 
 
+def _service_destinations(service: ServiceRule, firewall: Firewall) -> list[Endpoint]:
+    """Where a declared service lives, in every family it actually has.
+
+    A service written against a bare IPv4 address is an IPv4-only rule, and the
+    operator who typed the address has no way to see that. Where the inventory knows
+    that host also has an IPv6 address, both are emitted — otherwise the policy path
+    reproduces `EVIDENCE.md` E2 one service at a time.
+    """
+    if service.alias:
+        return [AliasRef(service.alias)]
+    if not service.host:
+        return [AnyEndpoint()]
+
+    declared = ip_address(service.host)
+    for host in firewall.hosts:
+        if declared in (host.v4, host.v6):
+            return [HostAddress(a) for a in (host.v4, host.v6) if a is not None]
+    return [HostAddress(declared)]
+
+
 def build_interface(
     role: str,
     entry: FirewallPolicy,
     policy: Policy,
     egress: EgressPolicy,
+    firewall: Firewall | None = None,
 ) -> tuple[GeneratedRule, ...]:
     """One internal segment: declared policy in declared order, then the deny."""
     out: list[GeneratedRule] = []
@@ -367,26 +406,36 @@ def build_interface(
     for service in entry.services:
         if service.segment != role:
             continue
-        out.append(
-            GeneratedRule(
-                rule=_quick(
-                    Action.PASS,
-                    (role,),
-                    floating=False,
-                    protocol=service.protocol,
-                    source=_endpoint_of(service.source),
-                    destination=(
-                        HostAddress(ip_address(service.host))
-                        if service.host
-                        else (AliasRef(service.alias) if service.alias else AnyEndpoint())
-                    ),
-                    destination_ports=_ports(service.ports),
-                    role=Role.ENCLAVE_POLICY,
-                ),
-                block=POLICY,
-                intent=service.name,
-            )
+        destinations = (
+            _service_destinations(service, firewall)
+            if firewall is not None
+            else [
+                HostAddress(ip_address(service.host))
+                if service.host
+                else (AliasRef(service.alias) if service.alias else AnyEndpoint())
+            ]
         )
+        for destination in destinations:
+            suffix = ""
+            if len(destinations) > 1 and isinstance(destination, HostAddress):
+                suffix = f" (IPv{destination.address.version})"
+            out.append(
+                GeneratedRule(
+                    rule=_quick(
+                        Action.PASS,
+                        (role,),
+                        floating=False,
+                        protocol=service.protocol,
+                        source=_endpoint_of(service.source),
+                        destination=destination,
+                        destination_ports=_ports(service.ports),
+                        role=Role.ENCLAVE_POLICY,
+                    ),
+                    block=POLICY,
+                    pair_key=f"service:{role}:{service.name}" if suffix else "",
+                    intent=f"{service.name}{suffix}",
+                )
+            )
 
     for index, allow in enumerate(egress.allow, start=1):
         if role not in allow.source.segments and not allow.source.any:
@@ -430,6 +479,7 @@ def build_wan(
     policy: Policy,
     preserved_wan: tuple[Rule, ...],
     egress: EgressPolicy,
+    firewall: Firewall | None = None,
 ) -> tuple[GeneratedRule, ...]:
     """WAN: preserved baseline access rules, then declared ingress, then the deny.
 
@@ -445,7 +495,7 @@ def build_wan(
         )
         for rule in preserved_wan
     ]
-    out.extend(build_interface("wan", entry, policy, EgressPolicy(default="none")))
+    out.extend(build_interface("wan", entry, policy, EgressPolicy(default="none"), firewall))
     if egress.default in ("deny_and_log", "deny"):
         out.append(
             GeneratedRule(
@@ -463,7 +513,9 @@ def build_wan(
     return tuple(out)
 
 
-def _group_asymmetries(narrowings: list[tuple[str, str, str]]) -> tuple[str, ...]:
+def _group_asymmetries(
+    narrowings: list[tuple[str, str, str]], covered_pairs: set[str] | None = None
+) -> tuple[str, ...]:
     """Collapse per-rule narrowings into one line per cause.
 
     A line per rule is the same fatigue trap as a brittle fingerprint: six
@@ -527,10 +579,10 @@ def generate(
     )
 
     per_interface = tuple(
-        (role, build_interface(role, entry, policy, entry.egress))
+        (role, build_interface(role, entry, policy, entry.egress, firewall))
         for role in _internal_roles(firewall)
     )
-    wan = build_wan(entry, policy, preserved_wan, entry.egress)
+    wan = build_wan(entry, policy, preserved_wan, entry.egress, firewall)
 
     ruleset = Ruleset(
         firewall=firewall.enclave,
@@ -542,14 +594,19 @@ def generate(
 
     table = aliases or {}
     asymmetries: list[tuple[str, str, str]] = []
+    families_by_pair: dict[str, set[str]] = {}
+    narrowing_by_intent: dict[str, str] = {}
 
     def settle_all(rules: tuple[GeneratedRule, ...]) -> tuple[GeneratedRule, ...]:
         out: list[GeneratedRule] = []
         for generated in rules:
             settled, narrowing = _settle(generated, table)
             out.append(settled)
+            if settled.pair_key:
+                families_by_pair.setdefault(settled.pair_key, set()).add(settled.rule.family.value)
             if narrowing is not None:
                 asymmetries.append(narrowing)
+                narrowing_by_intent[narrowing[2]] = settled.pair_key
         return tuple(out)
 
     settled_floating = settle_all(ruleset.floating)
@@ -561,5 +618,15 @@ def generate(
         floating=settled_floating,
         per_interface=settled_interfaces,
         wan=settled_wan,
-        warnings=(*ruleset.warnings, *_group_asymmetries(asymmetries)),
+        warnings=(
+            *ruleset.warnings,
+            *_group_asymmetries(
+                [
+                    n
+                    for n in asymmetries
+                    if families_by_pair.get(narrowing_by_intent.get(n[2], ""), set())
+                    != {"inet", "inet6"}
+                ]
+            ),
+        ),
     )

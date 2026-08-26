@@ -10,10 +10,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from conftest import ESSENTIAL, a_firewall, a_policy
+from conftest import ESSENTIAL, a_firewall, a_policy, a_ruleset
 
 from btht.app.generate.emit import checklist, endpoint_text, rule_row
-from btht.app.generate.order import BLOCK_ALL, PRESERVED, Ruleset, generate
+from btht.app.generate.order import BLOCK_ALL, PRESERVED, generate
 from btht.app.ingest.isa import load_catalogue
 from btht.app.model.policy import Selector
 from btht.app.model.rules import (
@@ -27,16 +27,6 @@ from btht.app.model.rules import (
 )
 
 CATALOGUE = load_catalogue(Path(__file__).resolve().parents[1] / "isa-checks.yaml")
-
-
-def a_ruleset() -> Ruleset:
-    return generate(
-        a_firewall(),
-        a_policy(),
-        CATALOGUE,
-        scoring_source=Selector(alias="Scoring_Sources"),
-        essential=ESSENTIAL,
-    )
 
 
 def test_endpoints_are_written_as_the_gui_field_is_typed() -> None:
@@ -119,9 +109,20 @@ def test_preserved_rules_are_marked_do_not_retype() -> None:
 
 
 def test_warnings_come_first_because_they_change_what_you_type() -> None:
-    ruleset = a_ruleset()
+    """Builds its own flawed estate rather than relying on the shared one being flawed."""
+    from dataclasses import replace
+
+    firewall = a_firewall()
+    ipv4_only = tuple(replace(h, v6=None) for h in firewall.hosts)
+    ruleset = generate(
+        replace(firewall, hosts=ipv4_only),
+        a_policy(),
+        CATALOGUE,
+        scoring_source=Selector(alias="Scoring_Sources"),
+        essential=ESSENTIAL,
+    )
     text = checklist(ruleset)
-    assert ruleset.warnings, "this fixture has a scored host with no IPv6"
+    assert ruleset.warnings, "a scored host with no IPv6 must produce a warning"
     assert text.index("## Read before you start") < text.index("## Floating tab")
 
 

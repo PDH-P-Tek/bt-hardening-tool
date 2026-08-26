@@ -18,8 +18,12 @@ from fastapi import APIRouter, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
-from btht.app.data import ESTATES
+from btht.app.data import ESTATES, ISA_CHECKS
+from btht.app.generate.diff import Gate, diff_rulesets, gate_for
+from btht.app.generate.emit import checklist
+from btht.app.generate.order import GenerationRefused, generate
 from btht.app.ingest.annex import looks_out_of_bounds, parse_rows, split_kinds
+from btht.app.ingest.isa import load_catalogue
 from btht.app.ingest.pfsense import ParseError, parse_string
 from btht.app.ingest.roles import derive_interfaces, derive_side
 from btht.app.model.estate import Estate, Firewall, Host, Node, Platform, SourceOfTruth
@@ -39,6 +43,7 @@ from btht.app.model.policy import (
     side_rules_of,
     validate_policy,
 )
+from btht.app.validate.rules import Context, Severity, run_all
 from btht.app.web.topology import details_json, layout, render_svg
 
 TEMPLATES = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
@@ -480,3 +485,96 @@ def paste_confirm(
         side_rules_of(path),
     )
     return RedirectResponse(f"/estates/{slug}", status_code=303)
+
+
+#: Acknowledgements are per estate, per enclave, and last only as long as the process.
+#: They are a decision about *this* generated ruleset; regenerating must re-ask.
+_ACKNOWLEDGED: dict[tuple[str, str], set[str]] = {}
+
+
+def _review(slug: str, enclave: str):  # type: ignore[no-untyped-def]
+    """Generate, validate and gate. Everything the review page needs, in one place."""
+    path = estate_path(slug)
+    estate = load_estate(path)
+    policy = load_policy(path)
+    firewall = estate.firewall(enclave)
+    if firewall is None:
+        return None
+
+    catalogue = load_catalogue(ISA_CHECKS if ISA_CHECKS.exists() else None)
+    ruleset = generate(
+        firewall,
+        policy,
+        catalogue,
+        scoring_source=Selector(alias="Scoring_Sources"),
+        essential={"dns": Selector(alias="DNS_Servers"), "ntp": Selector(alias="NTP_Servers")},
+    )
+    findings = run_all(
+        Context(firewall=firewall, ruleset=ruleset, policy=policy, catalogue=catalogue)
+    )
+    acknowledged = frozenset(_ACKNOWLEDGED.get((slug, enclave), set()))
+    return (
+        firewall,
+        ruleset,
+        findings,
+        gate_for(findings, acknowledged),
+        diff_rulesets(firewall.rules, ruleset),
+    )
+
+
+@router.get("/estates/{slug}/review/{enclave}", response_class=HTMLResponse)
+def review(request: Request, slug: str, enclave: str) -> HTMLResponse:
+    """The diff gate — `SPEC.md` §9. The last thing before anything reaches a firewall."""
+    try:
+        result = _review(slug, enclave)
+    except GenerationRefused as exc:
+        return render(
+            request,
+            "estate.html",
+            slug=estate_path(slug).stem,
+            estate=load_estate(estate_path(slug)),
+            platforms=[p.value for p in Platform],
+            messages=[("err", f"Refusing to generate: {exc}")],
+        )
+    if result is None:
+        return render(
+            request, "index.html", estates=[], messages=[("err", f"no enclave {enclave}")]
+        )
+    _firewall, _ruleset, findings, gate, diff = result
+    return render(
+        request,
+        "review.html",
+        slug=estate_path(slug).stem,
+        enclave=enclave,
+        gate=gate,
+        keys=[Gate.key(f) for f in gate.warnings],
+        info=[f for f in findings if f.severity is Severity.INFO],
+        diff=diff,
+    )
+
+
+@router.post("/estates/{slug}/review/{enclave}/acknowledge")
+def acknowledge(slug: str, enclave: str, key: str = Form(...)) -> RedirectResponse:
+    """One finding, one decision. There is no accept-all endpoint, deliberately."""
+    _ACKNOWLEDGED.setdefault((slug, enclave), set()).add(key)
+    return RedirectResponse(f"/estates/{slug}/review/{enclave}", status_code=303)
+
+
+@router.post("/estates/{slug}/review/{enclave}/export")
+def export(slug: str, enclave: str) -> Any:
+    """Export is refused unless the gate opens. Checked here, not only in the template."""
+    from fastapi.responses import PlainTextResponse
+
+    try:
+        result = _review(slug, enclave)
+    except GenerationRefused as exc:
+        # A refusal is a decision, not a crash. It must read as one at every entry
+        # point, or an operator sees a 500 and assumes the tool is broken rather than
+        # that their policy is incomplete.
+        return PlainTextResponse(f"Refusing to generate: {exc}", status_code=409)
+    if result is None:
+        return RedirectResponse(f"/estates/{slug}", status_code=303)
+    _firewall, ruleset, _findings, gate, _diff = result
+    if not gate.may_export:
+        return PlainTextResponse(f"Export refused. {gate.reason}", status_code=409)
+    return PlainTextResponse(checklist(ruleset, team=str(load_estate(estate_path(slug)).team)))
