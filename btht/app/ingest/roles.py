@@ -157,7 +157,11 @@ def apply_roles(rules: tuple[Rule, ...], mapping: dict[str, str]) -> tuple[Rule,
     return tuple(
         replace(
             rule,
-            interfaces=tuple(mapping.get(name, name) for name in rule.interfaces),
+            # `any` is not an ifname: it means every interface, and mapping it would
+            # invent a segment role called "any".
+            interfaces=tuple(
+                name if name == "any" else mapping.get(name, name) for name in rule.interfaces
+            ),
             source=_remap_endpoint(rule.source, mapping),
             destination=_remap_endpoint(rule.destination, mapping),
         )

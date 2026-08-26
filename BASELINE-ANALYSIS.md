@@ -33,6 +33,29 @@ For what teams actually did with this baseline during the exercise, see `EVIDENC
 | Upstream DNS | `10.181.0.11`, `10.181.0.12` |
 | Range core services block | `10.181.0.0/16` — DNS and the ISA monitor at `10.181.2.214` |
 
+### What the build template shows that an export does not
+
+The Green Team build template was read directly, and it settles four things that were
+inferred from exports:
+
+| | |
+|---|---|
+| Floating rules bind to | `<interface>any</interface>` — **not** a comma-separated interface list |
+| The account password element is | `<sha512-hash>`, not `<bcrypt-hash>` |
+| `<authorizedkeys>` is | **base64-encoded**. Read as text it is one meaningless blob |
+| `frrbfdpeers` and `frrospfd` sit | directly under `<installedpackages>`, as siblings of `<frr>` |
+
+Each of those was wrong in this tool and each failed *silently*: a comma-split turned
+`any` into one interface literally named "any"; the wrong password element recorded
+every account as having none; the keys were invisible; and the peer list came back empty
+so `V-ROUTING-PEERS` stayed quiet on every real configuration while appearing to have
+run. None of them would have surfaced as an error.
+
+Also confirmed from the template: NIC order is arbitrary and does not follow interface
+order (a four-interface build maps `wan` to `vmx1` and `opt2` to `vmx0`), separators are
+present from the start, `snmpd` ships with `rocommunity public`, `gt` holds a
+`NOPASSWD: ALL` sudo grant, and the FRR package password is the documented default.
+
 ### Boolean encoding
 
 ```xml

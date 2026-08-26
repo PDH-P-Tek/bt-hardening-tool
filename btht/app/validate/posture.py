@@ -164,10 +164,12 @@ def check_firewall(items: Iterable[Item]) -> list[Check]:
                 "Anti-lockout disabled, with management rules proven first",
                 Result.PASS if antilockout.value == "disabled" else Result.FAIL,
                 f"anti-lockout {antilockout.value}",
-                "This is the single highest-lockout-risk change in the document, and "
-                "it is also what makes a management restriction real. Do it only after "
-                "the management rule is verified from a second session, and keep that "
-                "session open. Whether the exercise permits it at all is HARDENING H-Q4.",
+                "Permitted, and it is what makes a management restriction real. Still "
+                "the highest-lockout-risk change here: do it only after the management "
+                "rule is verified from a second session, and keep that session open. "
+                "Green Team's own alias-based anti-lockout rule normally remains, so "
+                "the failure mode is recoverable rather than terminal — do not rely on "
+                "that instead of verifying.",
                 scoring_risk="none",
             )
         )

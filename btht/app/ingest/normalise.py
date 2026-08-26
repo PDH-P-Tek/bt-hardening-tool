@@ -204,7 +204,7 @@ def canonical_rule(
         "direction": rule.direction.value,
         "interfaces": (
             [ALL_INTERFACES]
-            if all_roles and set(rule.interfaces) == all_roles
+            if set(rule.interfaces) == {"any"} or (all_roles and set(rule.interfaces) == all_roles)
             else sorted(set(rule.interfaces))
         ),
         "ipprotocol": canonical_families(rule.family),

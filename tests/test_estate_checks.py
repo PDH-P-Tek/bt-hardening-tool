@@ -39,21 +39,54 @@ def rulesets_for(policy: Policy) -> dict[str, Ruleset]:
     }
 
 
+def test_a_declared_path_is_emitted_on_both_firewalls() -> None:
+    """Declared once, generated twice. The source's egress and the destination's ingress."""
+    policy = replace(
+        a_policy(),
+        dependencies=(
+            Dependency(
+                name="Agents to Fleet",
+                from_enclaves=("alpha",),
+                to_enclave="beta",
+                protocol="tcp",
+                ports=(8220,),
+            ),
+        ),
+    )
+    rulesets = rulesets_for(policy)
+    for enclave in ("alpha", "beta"):
+        assert any("Agents to Fleet" in g.intent for g in rulesets[enclave].all_rules()), (
+            f"{enclave} has no rule for the declared path"
+        )
+    assert [
+        f
+        for f in run_estate_checks(two_enclaves(), policy, rulesets)
+        if f.id == "V-CROSS-ENCLAVE-ORPHAN"
+    ] == []
+
+
 def test_a_path_with_only_one_end_is_reported() -> None:
     """The source shows traffic as permitted while the destination drops it.
 
     Neither firewall's own checks can see that, which is the whole point of this file.
+    Simulated by generating the source's ruleset and not the destination's — which is
+    what happens when someone regenerates one firewall and not the other.
     """
     policy = replace(
         a_policy(),
         dependencies=(
-            Dependency(name="Agents to Fleet", from_enclaves=("alpha",), to_enclave="beta"),
+            Dependency(
+                name="Agents to Fleet",
+                from_enclaves=("alpha",),
+                to_enclave="beta",
+                protocol="tcp",
+                ports=(8220,),
+            ),
         ),
     )
-    findings = run_estate_checks(two_enclaves(), policy, rulesets_for(policy))
-    messages = " ".join(f.message for f in findings)
-    assert "alpha is a source but has no egress rule" in messages
-    assert "beta is the destination and has no ingress rule" in messages
+    only_source = {"alpha": rulesets_for(policy)["alpha"]}
+    findings = run_estate_checks(two_enclaves(), policy, only_source)
+    assert any("Half a path is worse than none" in f.message for f in findings)
 
 
 def test_a_dependency_pointing_at_an_enclave_with_no_ruleset_is_reported() -> None:

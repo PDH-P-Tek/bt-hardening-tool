@@ -437,6 +437,60 @@ def build_interface(
                 )
             )
 
+    # Cross-enclave dependencies. Declared once, emitted on **both** firewalls: the
+    # egress here and the ingress on the far side. Emitting one end leaves the source
+    # showing traffic as permitted while the destination silently drops it, and neither
+    # firewall's own checks can see that — `SPEC.md` §8, V-CROSS-ENCLAVE-ORPHAN.
+    if firewall is not None:
+        for dependency in policy.dependencies:
+            outbound = firewall.enclave in dependency.from_enclaves and (
+                not dependency.from_segments or role in dependency.from_segments
+            )
+            inbound = firewall.enclave == dependency.to_enclave
+            if not (outbound or inbound):
+                continue
+            if outbound:
+                target: Endpoint = (
+                    AliasRef(dependency.to_alias)
+                    if dependency.to_alias
+                    else (
+                        HostAddress(ip_address(dependency.to_host))
+                        if dependency.to_host
+                        else AnyEndpoint()
+                    )
+                )
+                source: Endpoint = InterfaceNet(role)
+                way = "out to"
+            else:
+                target = (
+                    AliasRef(dependency.to_alias)
+                    if dependency.to_alias
+                    else (
+                        HostAddress(ip_address(dependency.to_host))
+                        if dependency.to_host
+                        else AnyEndpoint()
+                    )
+                )
+                source = AnyEndpoint()
+                way = "in from"
+            out.append(
+                GeneratedRule(
+                    rule=_quick(
+                        Action.PASS,
+                        (role,),
+                        floating=False,
+                        protocol=dependency.protocol,
+                        source=source,
+                        destination=target,
+                        destination_ports=_ports(dependency.ports),
+                        role=Role.ENCLAVE_POLICY,
+                    ),
+                    block=POLICY,
+                    intent=f"{dependency.name} — {way} {dependency.to_enclave or 'peer'}"
+                    + (f". {dependency.notes.splitlines()[0]}" if dependency.notes else ""),
+                )
+            )
+
     for index, allow in enumerate(egress.allow, start=1):
         if role not in allow.source.segments and not allow.source.any:
             continue

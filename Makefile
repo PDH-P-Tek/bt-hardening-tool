@@ -1,6 +1,6 @@
 # BT Hardening Tool
 
-.PHONY: install test lint fmt typecheck check run clean
+.PHONY: install test lint fmt typecheck check run demo clean
 
 install:            ## create the venv and install everything
 	uv sync
@@ -22,6 +22,9 @@ typecheck:
 	uv run mypy
 
 check: lint typecheck test   ## what CI runs. Fails fast: a broken step stops the rest.
+
+demo:               ## build a demo estate to click through
+	uv run python scripts/demo_estate.py
 
 run:                ## serve the app on localhost:8000
 	uv run uvicorn btht.app.main:app --reload --port 8000

@@ -107,7 +107,10 @@ def test_anti_lockout_check_states_the_risk_and_the_open_question() -> None:
     check = {c.id: c for c in check_firewall(items)}["H-PF-01"]
     assert check.result is Result.FAIL
     assert "second session" in check.remediation
-    assert "H-Q4" in check.remediation, "whether the exercise permits it is still open"
+    assert "Permitted" in check.remediation, "H-Q4 is closed: it is allowed"
+    assert "do not rely on that" in check.remediation, (
+        "GT's own rule makes this recoverable, which is not a reason to skip verifying"
+    )
 
 
 def test_unauthenticated_management_services_fail() -> None:

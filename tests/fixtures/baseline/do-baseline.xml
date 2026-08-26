@@ -66,17 +66,14 @@
     </opt2>
   </interfaces>
   <installedpackages>
-    <frr>
-      <frrbfdpeers>
-        <config><peer>25.42.0.1</peer></config>
-        <config><peer>25.42.0.2</peer></config>
-        <config><peer>fd81:25:42::1</peer></config>
-        <config><peer>fd81:25:42::2</peer></config>
-      </frrbfdpeers>
-      <frrospfd>
-        <routerid>25.42.0.10</routerid>
-      </frrospfd>
-    </frr>
+    <frr><config><enable>on</enable></config></frr>
+    <frrbfdpeers>
+      <config><peer>25.42.0.1</peer></config>
+      <config><peer>25.42.0.2</peer></config>
+      <config><peer>fd81:25:42::1</peer></config>
+      <config><peer>fd81:25:42::2</peer></config>
+    </frrbfdpeers>
+    <frrospfd><config><routerid>25.42.0.10</routerid></config></frrospfd>
   </installedpackages>
   <aliases>
     <alias>

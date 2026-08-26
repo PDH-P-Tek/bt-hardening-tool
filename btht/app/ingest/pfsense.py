@@ -256,6 +256,22 @@ def _aliases(root: ET.Element) -> tuple[Alias, ...]:
     return tuple(out)
 
 
+#: What a rule bound to every interface says. The shipped floating rules use this
+#: rather than naming each interface, which a comma-split silently turns into a single
+#: interface literally called "any" — a rule that then matches nothing anywhere.
+ANY_INTERFACE = "any"
+
+
+def _interface_tokens(raw: str) -> tuple[str, ...]:
+    """`wan,lan,opt1` or `any`. Both appear in real configurations."""
+    text = raw.strip()
+    if not text:
+        return ()
+    if text.lower() == ANY_INTERFACE:
+        return (ANY_INTERFACE,)
+    return tuple(part.strip() for part in text.split(",") if part.strip())
+
+
 def _rules(root: ET.Element) -> tuple[Rule, ...]:
     node = root.find("filter")
     if node is None:
@@ -284,11 +300,7 @@ def _rules(root: ET.Element) -> tuple[Rule, ...]:
         out.append(
             Rule(
                 action=action,
-                interfaces=tuple(
-                    part.strip()
-                    for part in (rule.findtext("interface") or "").split(",")
-                    if part.strip()
-                ),
+                interfaces=_interface_tokens(rule.findtext("interface") or ""),
                 family=family,
                 direction=direction,
                 quick=pf_bool(rule.find("quick")),
@@ -343,14 +355,20 @@ def _facts(root: ET.Element) -> PlatformFacts:
     if noantilockout is None:
         noantilockout = root.find("system/webgui/noantilockout")
 
+    # `frrbfdpeers` and `frrospfd` are siblings of `frr` under `installedpackages`,
+    # not children of it. Nesting them cost nothing visible — the peer list simply
+    # came back empty, and `V-ROUTING-PEERS` would have stayed silent on every real
+    # configuration while looking like it had checked.
     peers = tuple(
         (p.text or "").strip()
-        for p in root.findall("installedpackages/frr/frrbfdpeers/config/peer")
+        for p in root.findall("installedpackages/frrbfdpeers/config/peer")
         if (p.text or "").strip()
     )
     router_ids = tuple(
         (r.text or "").strip()
-        for r in root.findall("installedpackages/frr//routerid")
+        for r in root.findall("installedpackages/")
+        if r.tag.startswith("frrospf")
+        for r in r.findall("config/routerid")
         if (r.text or "").strip()
     )
     return PlatformFacts(

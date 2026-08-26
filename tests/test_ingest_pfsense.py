@@ -200,3 +200,65 @@ def test_parsing_a_credential_bearing_config_retains_no_credential_material() ->
     assert parsed.facts.config_version == "23.3"
     assert len(parsed.rules) == 1
     assert parsed.rules[0].source == AliasRef("Remote_Access")
+
+
+# --- against the shape of a real build template -----------------------------
+
+
+def test_the_shipped_template_shape_parses() -> None:
+    """Reproduces the real Green Team build template, and it contradicted three
+    assumptions the hand-built fixtures had baked in."""
+    parsed = parse_file(FIXTURES / "credentials" / "gt-build-template.xml")
+
+    floating = [r for r in parsed.rules if r.floating]
+    assert floating and all(r.interfaces == ("any",) for r in floating), (
+        "the shipped floating rules bind to `any`, not to a comma-separated list"
+    )
+    assert floating[0].state_type == "keep state", "written as CDATA in the real file"
+
+
+def test_a_rule_on_any_interface_is_the_same_identity_as_one_on_all_of_them() -> None:
+    """Otherwise the shipped baseline and its generated equivalent never match."""
+    from dataclasses import replace
+
+    from btht.app.ingest.fingerprint import strict_fingerprint
+    from btht.app.ingest.normalise import Template
+
+    parsed = parse_file(FIXTURES / "credentials" / "gt-build-template.xml")
+    on_any = next(r for r in parsed.rules if r.floating)
+    spelled_out = replace(on_any, interfaces=("wan", "ws", "svrs", "dmz"))
+    roles = frozenset({"wan", "ws", "svrs", "dmz"})
+    assert strict_fingerprint(on_any, {}, Template(), roles) == strict_fingerprint(
+        spelled_out, {}, Template(), roles
+    )
+
+
+def test_the_frr_peers_are_read_from_where_they_actually_live() -> None:
+    """`frrbfdpeers` is a sibling of `frr`, not a child.
+
+    Nested wrongly it cost nothing visible: the list came back empty and
+    `V-ROUTING-PEERS` stayed silent on every real configuration while appearing to
+    have checked. It is the evidence that proves the alias defect (F1).
+    """
+    facts = parse_file(FIXTURES / "credentials" / "gt-build-template.xml").facts
+    assert facts.frr_bfd_peers == ("25.42.0.1", "25.42.0.2", "fd81:25:42::1", "fd81:25:42::2")
+    assert facts.frr_ospf_router_ids == ("25.42.0.10",)
+
+
+def test_the_routers_alias_defect_is_visible_against_the_real_peers() -> None:
+    """F1, provable rather than asserted: the alias lists fd81:10, the peers are fd81:25."""
+    parsed = parse_file(FIXTURES / "credentials" / "gt-build-template.xml")
+    routers = next(a for a in parsed.aliases if a.name == "Routers")
+    v6_in_alias = [e for e in routers.entries if e.startswith("fd81:")]
+    v6_peers = [p for p in parsed.facts.frr_bfd_peers if p.startswith("fd81:")]
+    assert v6_in_alias and v6_peers
+    assert not set(v6_in_alias) & set(v6_peers), "the alias covers none of the real v6 peers"
+
+
+def test_reading_the_template_retains_no_credential_material() -> None:
+    from dataclasses import asdict
+
+    parsed = parse_file(FIXTURES / "credentials" / "gt-build-template.xml")
+    haystack = repr(asdict(parsed)).lower()
+    for needle in ("$6$", "synthetichash", "syntheticpackagepassword", "rocommunity", "nopasswd"):
+        assert needle not in haystack, f"{needle} survived the parse"

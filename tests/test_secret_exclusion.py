@@ -40,9 +40,13 @@ SECRET_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("ECDSA key body", re.compile(r"ecdsa-sha2-nistp\d+\s+[A-Za-z0-9+/]{60,}")),
     ("bcrypt hash", re.compile(r"\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}")),
     ("sha-crypt hash", re.compile(r"\$[156]\$[./A-Za-z0-9]{1,16}\$[./A-Za-z0-9]{20,}")),
-    ("pfSense bcrypt element", re.compile(r"<bcrypt-hash>(?!\s*</)")),
-    ("pfSense password element", re.compile(r"<password>(?!\s*</)")),
-    ("PSK element", re.compile(r"<pre-shared-key>(?!\s*</)")),
+    # Populated elements, not tag names: documentation has to be able to *discuss*
+    # `<bcrypt-hash>` without tripping the control, or the control gets relaxed by
+    # whoever is writing the documentation at the time.
+    ("pfSense hash element", re.compile(r"<(?:bcrypt|sha512)-hash>[^<]{10,}</")),
+    ("pfSense password element", re.compile(r"<password>(?:<!\[CDATA\[)?[^<\s]{6,}")),
+    ("PSK element", re.compile(r"<pre-shared-key>[^<]{6,}</")),
+    ("private key element", re.compile(r"<prv>[A-Za-z0-9+/]{40,}")),
 )
 
 TEXT_SUFFIXES = {

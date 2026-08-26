@@ -520,3 +520,103 @@ def test_a_router_login_line_is_critical() -> None:
 
     item = next(i for i in frr_collect(a_frr_transport()).items if "username admin" in i.key)
     assert item.severity is Severity.CRITICAL
+
+
+# --- handover and digest, Phase 8.4 -----------------------------------------
+
+
+def a_store_with_history(tmp_path: Path) -> Store:
+    from btht.app.monitor.report import handover  # noqa: F401  (import proves it loads)
+
+    store = Store(tmp_path / "m.sqlite")
+    store.adopt_baseline(collect(a_transport()))
+    intruder = PASSWD + "svc-backup:x:1001:1001::/home/svc:/bin/bash\n"
+    changes = store.apply(collect(a_transport(**{"M-ACC-01": intruder})))
+    store.flag(host="host1", key=changes[0].key, note="not ours — raised with the SOC cell")
+    return store
+
+
+def test_the_handover_leads_with_what_is_being_dealt_with(tmp_path: Path) -> None:
+    """The next shift should start from what the last shift worked out."""
+    from btht.app.monitor.report import handover
+
+    store = a_store_with_history(tmp_path)
+    report = handover(store, shift="night")
+    assert "Being dealt with" in report
+    assert "raised with the SOC cell" in report
+    assert "account svc-backup" in report
+    store.close()
+
+
+def test_a_flagged_item_without_a_note_says_to_go_and_ask(tmp_path: Path) -> None:
+    """A flag with no note is a decision somebody made and did not record."""
+    from btht.app.monitor.report import handover
+
+    store = Store(tmp_path / "m.sqlite")
+    store.adopt_baseline(collect(a_transport()))
+    intruder = PASSWD + "svc:x:1001:1001::/home/svc:/bin/sh\n"
+    changes = store.apply(collect(a_transport(**{"M-ACC-01": intruder})))
+    store.flag(host="host1", key=changes[0].key)
+    assert "ask whoever flagged it" in handover(store)
+    store.close()
+
+
+def test_an_unreachable_host_leads_the_handover(tmp_path: Path) -> None:
+    from btht.app.monitor.report import handover
+
+    store = Store(tmp_path / "m.sqlite")
+    store.apply(Collection(host="host9", reachable=False, error="timed out"))
+    report = handover(store)
+    assert "Not answering" in report
+    assert "host9" in report
+    assert "itself an alarm" in report
+    store.close()
+
+
+def test_suppressed_items_are_re_surfaced_once_a_shift(tmp_path: Path) -> None:
+    """A suppression made at 2am for a good reason can outlive the reason."""
+    from btht.app.monitor.report import handover
+
+    store = Store(tmp_path / "m.sqlite")
+    store.adopt_baseline(collect(a_transport()))
+    store.suppress(host="host1", key="account:root", note="rewritten nightly by config mgmt")
+    assert "outlive the reason" in handover(store)
+    store.close()
+
+
+def test_metrics_are_emitted_in_a_format_something_else_can_read(tmp_path: Path) -> None:
+    from btht.app.monitor.report import metrics
+
+    store = a_store_with_history(tmp_path)
+    text = metrics(store)
+    assert "btht_items_flagged 1" in text
+    assert "# TYPE btht_hosts_monitored gauge" in text
+    store.close()
+
+
+def test_a_quiet_estate_reports_as_quiet(tmp_path: Path) -> None:
+    """An item sitting at its baseline is not outstanding work.
+
+    Counting every untouched item as unreviewed would report a healthy estate as
+    having hundreds of things to look at — one number nobody can act on.
+    """
+    from btht.app.monitor.report import digest_for
+
+    store = Store(tmp_path / "m.sqlite")
+    store.adopt_baseline(collect(a_transport()))
+    store.record_heartbeat(collect(a_transport()))
+    summary = digest_for(store)
+    assert summary.unreviewed == 0
+    assert summary.quiet is True
+    store.close()
+
+
+def test_a_changed_untriaged_item_does_count_as_outstanding(tmp_path: Path) -> None:
+    from btht.app.monitor.report import digest_for
+
+    store = Store(tmp_path / "m.sqlite")
+    store.adopt_baseline(collect(a_transport()))
+    store.apply(collect(a_transport(**{"M-ACC-01": PASSWD + "svc:x:1:1::/h:/bin/sh\n"})))
+    assert digest_for(store).unreviewed == 1
+    assert digest_for(store).quiet is False
+    store.close()

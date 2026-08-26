@@ -140,3 +140,24 @@ all three.
 
 Erring towards "disabled" is the safe direction: an inactive rule read as live surfaces in
 triage, where a live rule read as inactive would be silently dropped from the output.
+
+---
+
+## Q13 — Green Team's own anti-lockout rule · Needed (not blocking)
+
+**Reported from a previous exercise:** Green Team create an anti-lockout rule of their
+own, sourced from an alias, when they launch the range. Confirmed alongside it that
+**disabling built-in anti-lockout is permitted** — `HARDENING.md` H-Q4 is closed.
+
+The rule is created at launch rather than shipped in the pre-build baseline, so it is
+not in `seed-profile.yaml` and the tool will meet it as an unrecognised item at triage.
+That is the correct behaviour — it surfaces rather than being guessed at — but it costs
+a decision on every firewall, and dropping it by mistake is a lockout.
+
+**What would close it: the alias name and its contents, from any launched range.** With
+those the profile recognises the rule on sight and classifies it `remote_access` /
+`keep_verbatim` automatically, and `V-LOCKOUT-DROP` protects it without anyone having
+to notice.
+
+Also reported: moving that rule to the floating tab so it covers every interface. The
+generator already emits `MGMT ACCESS` that way for the same reason (`SPEC.md` §7.1).

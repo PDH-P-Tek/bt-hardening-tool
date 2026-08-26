@@ -32,7 +32,18 @@ COMMANDS = {
 
 #: The only elements this adapter reads beyond the three the generator parses.
 #: Everything not named here is not looked at — `MONITORING.md` §4.
-ACCOUNT_ELEMENTS = ("name", "uid", "scope", "expires", "authorizedkeys", "bcrypt-hash")
+ACCOUNT_ELEMENTS = (
+    "name",
+    "uid",
+    "scope",
+    "expires",
+    "authorizedkeys",
+    # Both spellings appear: the shipped build template writes sha512-hash, and
+    # bcrypt-hash appears elsewhere. Reading only one silently records every account
+    # as having no password, which is the opposite of the truth.
+    "sha512-hash",
+    "bcrypt-hash",
+)
 
 
 def _accounts(root: ET.Element, secret: str) -> list[Item]:
@@ -46,7 +57,7 @@ def _accounts(root: ET.Element, secret: str) -> list[Item]:
         name = (user.findtext("name") or "").strip()
         if not name:
             continue
-        hashed = (user.findtext("bcrypt-hash") or "").strip()
+        hashed = (user.findtext("sha512-hash") or user.findtext("bcrypt-hash") or "").strip()
         password_state = f"set:{digest(secret, hashed)}" if hashed else "no-password"
         items.append(
             Item(
@@ -63,7 +74,7 @@ def _accounts(root: ET.Element, secret: str) -> list[Item]:
                 label=f"firewall account {name}",
             )
         )
-        for line in (user.findtext("authorizedkeys") or "").splitlines():
+        for line in _authorized_key_lines(user.findtext("authorizedkeys") or ""):
             entry = line.strip()
             if not entry:
                 continue
@@ -83,6 +94,25 @@ def _accounts(root: ET.Element, secret: str) -> list[Item]:
                 )
             )
     return items
+
+
+def _authorized_key_lines(raw: str) -> list[str]:
+    """pfSense base64-encodes the authorised-keys field. Decode, then read.
+
+    Read as plain text it looks like one meaningless blob, so every key on the box
+    would be invisible to the monitor while appearing to have been checked.
+    """
+    import base64
+    import binascii
+
+    text = raw.strip()
+    if not text:
+        return []
+    try:
+        decoded = base64.b64decode(text, validate=True).decode("utf-8", errors="replace")
+    except (binascii.Error, ValueError):
+        decoded = text
+    return [line.strip() for line in decoded.splitlines() if line.strip()]
 
 
 def _groups(root: ET.Element) -> list[Item]:

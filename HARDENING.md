@@ -222,7 +222,34 @@ Read before applying anything.
 | **H-Q1** | Review the DCM26 end-state configs for anti-lockout state, correcting for the boolean inversion. If it was active estate-wide, this is a new `EVIDENCE.md` finding. | Not blocking; changes the pitch | Paul — data already held |
 | **H-Q2** | Which FRR daemons are actually running on the routers, and are their VTY ports exposed? Determines whether `H-FRR-01` is theoretical or urgent. | Blocks `H-FRR-01` scoping | Inspect a router |
 | **H-Q3** | Does pfSense preserve `from=`/`command=` options when it regenerates `authorized_keys` from `config.xml`? | Shared with `MONITORING.md` Q2 | Test on CE 2.8.1 |
-| **H-Q4** | Confirm the exercise permits disabling anti-lockout — some ranges mandate it for GT access recovery. | **Blocks `H-PF-01`** | Exercise lead / Green Team |
+| ~~**H-Q4**~~ | ~~Confirm the exercise permits disabling anti-lockout.~~ **CLOSED — it is permitted.** Green Team ship their own alias-based anti-lockout rule when the range is launched, so built-in anti-lockout is not the only thing keeping access open. See §6.1. | — | — |
 | **H-Q5** | Is there a remote syslog target available to the Blue Team in-enclave? `H-SSH-20`, `H-FW-10` and `H-PF-09` all assume one. | Blocks the logging checks | Blue Team lead |
 
-`H-Q4` is worth asking early. Disabling anti-lockout is the pivot the whole management-restriction story turns on, and finding out on day one that it is prohibited would change the approach rather than just the checklist.
+`H-Q4` is closed: disabling anti-lockout is permitted, which unblocks `H-PF-01` and the
+whole management-restriction sequence in §4.
+
+### 6.1 Green Team's own anti-lockout rule
+
+**Reported from a previous exercise, and it changes the risk calculation.** Green Team
+create their own anti-lockout rule, sourced from an alias, when they launch the range.
+So built-in anti-lockout is not the only thing holding the door open — there is a
+second, GT-owned rule doing the same job.
+
+Two consequences:
+
+- **Disabling built-in anti-lockout is less exposed than it looks**, because the GT
+  rule remains. That does not remove the need to verify management access from a second
+  session first; it means the failure mode is recoverable rather than terminal.
+- **That rule and its alias are lockout-critical** and must be preserved. It is not in
+  the documented protected set because it is created at launch rather than shipped in
+  the baseline, so the tool meets it as an unrecognised item at triage and the operator
+  must classify it as `remote_access` / `keep_verbatim` rather than dropping it.
+
+Also reported: moving that rule to the **floating tab** so it applies across every
+interface. That is the same shape this tool generates for `MGMT ACCESS` (`SPEC.md`
+§7.1), for the same reason — a per-interface management rule has to be right on every
+interface separately, and on an estate where one enclave inverts LAN that is a mistake
+waiting to happen.
+
+**Worth confirming on day one:** the alias name and its contents, so the profile can
+recognise the rule on sight instead of surfacing it as unknown.
