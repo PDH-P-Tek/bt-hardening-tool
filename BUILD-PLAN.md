@@ -7,7 +7,7 @@ on something outside the code.
 **This does not replace those lists.** Every step cites its source, and the source
 stays authoritative on *what* the step must do. This file is authoritative on *when*.
 
-Status: **Phases 0 and 1 complete. Phase 2 in progress** — 2.1–2.5 done. 2.6 (ISA checks) next, then Phase 3.
+Status: **Phases 0–3 complete.** The generator produces a Tier 1 checklist. Phase 4 next — triage, validators, diff gate.
 
 ---
 
@@ -85,9 +85,9 @@ setup it resolves nothing and says so, which is the behaviour, not a gap.
 
 | # | Step | Source | Done when |
 |---|---|---|---|
-| 3.1 | Ordering engine — floating blocks 1–6, per-interface, WAN | §7.1 | Every intended pass is an explicit quick rule; no reliance on non-quick semantics |
-| 3.2 | Dual-stack emission | §7.2 | No v4-only rule emitted silently; asymmetry flagged |
-| 3.3 | Tier 1 output — GUI checklist, markdown and printable HTML | §9 | One line per rule, every GUI field spelled out |
+| 3.1 | ✅ Ordering engine — floating blocks 1–6, per-interface, WAN | §7.1 | Every intended pass is an explicit quick rule; no reliance on non-quick semantics |
+| 3.2 | ✅ Dual-stack emission | §7.2 | No v4-only rule emitted silently; asymmetry flagged |
+| 3.3 | ✅ Tier 1 output — GUI checklist, markdown and printable HTML | §9 | One line per rule, every GUI field spelled out |
 
 **Milestone: the tool is worth having.** A team can work from Tier 1 with no validators,
 no XML and no diff view.

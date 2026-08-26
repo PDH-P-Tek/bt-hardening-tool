@@ -20,12 +20,14 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from ipaddress import ip_address
 
+from btht.app.generate.dualstack import verdict_for
 from btht.app.ingest.fingerprint import strict_fingerprint
 from btht.app.ingest.isa import Catalogue, required_ports
 from btht.app.model.estate import Firewall
 from btht.app.model.policy import EgressPolicy, FirewallPolicy, Policy, Selector
 from btht.app.model.rules import (
     Action,
+    Alias,
     AliasRef,
     AnyEndpoint,
     Direction,
@@ -227,24 +229,42 @@ def build_floating(
             if not pairs:
                 continue
             scored += 1
+            # One rule per address family the host actually has. A scored host with
+            # only an IPv4 address declared gets an IPv4 rule and a warning, rather
+            # than an `inet46` rule that quietly protects half of what it claims —
+            # `EVIDENCE.md` E2, where 74 such rules sat above the estate's catch-alls.
+            addresses = [a for a in (host.v4, host.v6) if a is not None]
+            if not addresses:
+                warnings.append(
+                    f"{host.hostname} is scored but has no address declared, so no "
+                    "scoring rule could be generated for it."
+                )
+                continue
             for proto, port in pairs:
-                out.append(
-                    GeneratedRule(
-                        rule=_quick(
-                            Action.PASS,
-                            every,
-                            protocol=None if proto == "icmp" else proto,
-                            icmp_types=("echoreq",) if proto == "icmp" else (),
-                            source=_endpoint_of(scoring_source),
-                            destination=HostAddress(host.v4) if host.v4 else AnyEndpoint(),
-                            destination_ports=_ports((port,)) if port else (),
-                            role=Role.SCORING,
-                        ),
-                        block=SCORING,
-                        intent=f"{host.hostname} {proto}"
-                        + (f"/{port}" if port else "")
-                        + " is scored — DO NOT REMOVE",
+                for address in addresses:
+                    out.append(
+                        GeneratedRule(
+                            rule=_quick(
+                                Action.PASS,
+                                every,
+                                protocol=None if proto == "icmp" else proto,
+                                icmp_types=("echoreq",) if proto == "icmp" else (),
+                                source=_endpoint_of(scoring_source),
+                                destination=HostAddress(address),
+                                destination_ports=_ports((port,)) if port else (),
+                                role=Role.SCORING,
+                            ),
+                            block=SCORING,
+                            intent=f"{host.hostname} {proto}"
+                            + (f"/{port}" if port else "")
+                            + f" on {'IPv6' if address.version == 6 else 'IPv4'}"
+                            + " is scored — DO NOT REMOVE",
+                        )
                     )
+            if host.v6 is None:
+                warnings.append(
+                    f"{host.hostname} is scored but has no IPv6 address declared. IPv6 "
+                    "availability is scored too, so this host is only half covered."
                 )
     elif catalogue.is_empty:
         warnings.append(
@@ -443,6 +463,47 @@ def build_wan(
     return tuple(out)
 
 
+def _group_asymmetries(narrowings: list[tuple[str, str, str]]) -> tuple[str, ...]:
+    """Collapse per-rule narrowings into one line per cause.
+
+    A line per rule is the same fatigue trap as a brittle fingerprint: six
+    near-identical warnings get skimmed, and the one that mattered goes with them.
+    One line per cause, naming every rule it covers, stays readable and stays specific.
+    """
+    by_reason: dict[tuple[str, str], list[str]] = {}
+    for family, reason, label in narrowings:
+        by_reason.setdefault((family, reason), []).append(label)
+    return tuple(
+        sorted(
+            f"{len(labels)} rule(s) emitted {family} only, because {reason}. IPv6 is "
+            f"scored, so these protect half of what they appear to — "
+            f"{'; '.join(sorted(labels))}"
+            for (family, reason), labels in by_reason.items()
+        )
+    )
+
+
+def _settle(
+    generated: GeneratedRule, aliases: dict[str, Alias]
+) -> tuple[GeneratedRule, tuple[str, str, str] | None]:
+    """Give a rule its family, description and tracker. Preserved rules are untouched."""
+    if generated.preserved:
+        return generated, None
+    verdict = verdict_for(generated.rule, aliases)
+    rule = replace(
+        generated.rule,
+        family=verdict.family,
+        descr=generated.description,
+    )
+    rule = replace(rule, tracker=tracker_for(rule))
+    if verdict.is_asymmetric:
+        return (
+            replace(generated, rule=rule),
+            (verdict.family.value, verdict.reason, generated.intent),
+        )
+    return replace(generated, rule=rule), None
+
+
 def generate(
     firewall: Firewall,
     policy: Policy,
@@ -451,6 +512,7 @@ def generate(
     preserved_wan: tuple[Rule, ...] = (),
     scoring_source: Selector = Selector(),
     essential: dict[str, Selector] | None = None,
+    aliases: dict[str, Alias] | None = None,
 ) -> Ruleset:
     """A pure function of its inputs — `SPEC.md` §3. Same inputs, same ruleset."""
     entry = policy.for_enclave(firewall.enclave) or FirewallPolicy(enclave=firewall.enclave)
@@ -477,30 +539,27 @@ def generate(
         wan=wan,
         warnings=warnings,
     )
+
+    table = aliases or {}
+    asymmetries: list[tuple[str, str, str]] = []
+
+    def settle_all(rules: tuple[GeneratedRule, ...]) -> tuple[GeneratedRule, ...]:
+        out: list[GeneratedRule] = []
+        for generated in rules:
+            settled, narrowing = _settle(generated, table)
+            out.append(settled)
+            if narrowing is not None:
+                asymmetries.append(narrowing)
+        return tuple(out)
+
+    settled_floating = settle_all(ruleset.floating)
+    settled_interfaces = tuple((role, settle_all(rules)) for role, rules in ruleset.per_interface)
+    settled_wan = settle_all(ruleset.wan)
+
     return replace(
         ruleset,
-        floating=tuple(
-            replace(g, rule=replace(g.rule, tracker=tracker_for(g.rule), descr=g.description))
-            if not g.preserved
-            else g
-            for g in ruleset.floating
-        ),
-        per_interface=tuple(
-            (
-                role,
-                tuple(
-                    replace(
-                        g, rule=replace(g.rule, tracker=tracker_for(g.rule), descr=g.description)
-                    )
-                    for g in rules
-                ),
-            )
-            for role, rules in ruleset.per_interface
-        ),
-        wan=tuple(
-            replace(g, rule=replace(g.rule, tracker=tracker_for(g.rule), descr=g.description))
-            if not g.preserved
-            else g
-            for g in ruleset.wan
-        ),
+        floating=settled_floating,
+        per_interface=settled_interfaces,
+        wan=settled_wan,
+        warnings=(*ruleset.warnings, *_group_asymmetries(asymmetries)),
     )

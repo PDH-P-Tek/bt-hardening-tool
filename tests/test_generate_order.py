@@ -23,6 +23,7 @@ from btht.app.generate.order import (
     SCORING,
     THREAT_BLOCK,
     GenerationRefused,
+    Ruleset,
     generate,
     tracker_for,
 )
@@ -101,7 +102,7 @@ def a_policy(**overrides: object) -> Policy:
     return Policy(**base)  # type: ignore[arg-type]
 
 
-def build(**kwargs: object):  # type: ignore[no-untyped-def]
+def build(**kwargs: object) -> Ruleset:
     return generate(
         a_firewall(),
         a_policy(),
@@ -231,11 +232,64 @@ def test_the_icmp_minimum_set_is_emitted_whole() -> None:
     assert {"133", "134", "135", "136", "2", "128", "129"} <= set(icmp.rule.icmp_types)
 
 
-def test_generated_rules_are_dual_stack() -> None:
-    """`EVIDENCE.md` E2 — 74 IPv4-only rules across the estate, all bypassed on IPv6."""
-    for generated in build().all_rules():
-        if not generated.preserved:
-            assert generated.rule.family is Family.INET46
+def test_rules_are_dual_stack_unless_an_endpoint_forces_otherwise() -> None:
+    """`EVIDENCE.md` E2 — 74 IPv4-only rules across the estate, all bypassed on IPv6.
+
+    The rule is not "everything is inet46": a rule written against an IPv4 address
+    *is* IPv4-only, and pretending otherwise is how those 74 came about. The contract
+    is that nothing narrows **silently**.
+    """
+    ruleset = build()
+    for generated in ruleset.all_rules():
+        if generated.preserved or generated.rule.family is Family.INET46:
+            continue
+        assert any(generated.intent in w for w in ruleset.warnings), (
+            f"narrowed to {generated.rule.family.value} with nothing said: {generated.description}"
+        )
+
+
+def test_a_scored_host_with_both_families_gets_both_rules() -> None:
+    """`SPEC.md` §7.2 — emit the paired rule rather than one that covers half."""
+    from dataclasses import replace as dc_replace
+    from ipaddress import IPv6Address
+
+    firewall = a_firewall()
+    hosts = tuple(
+        dc_replace(h, v6=IPv6Address("2001:db8:3::5")) if h.hostname == "dc01" else h
+        for h in firewall.hosts
+    )
+    ruleset = generate(
+        dc_replace(firewall, hosts=hosts),
+        a_policy(),
+        CATALOGUE,
+        scoring_source=Selector(alias="Scoring_Sources"),
+        essential=ESSENTIAL,
+    )
+    dc_rules = [g for g in ruleset.floating if g.block == SCORING and "dc01" in g.intent]
+    assert any("IPv4" in g.intent for g in dc_rules)
+    assert any("IPv6" in g.intent for g in dc_rules)
+
+
+def test_a_scored_host_with_no_ipv6_is_reported_as_half_covered() -> None:
+    ruleset = build()
+    assert any("only half covered" in w for w in ruleset.warnings)
+
+
+def test_narrowings_are_grouped_by_cause_not_listed_per_rule() -> None:
+    """The same fatigue trap as a brittle fingerprint.
+
+    Six near-identical warnings get skimmed and the one that mattered goes with them.
+    One line per cause, naming every rule it covers.
+    """
+    ruleset = build()
+    narrowed = [
+        g for g in ruleset.all_rules() if not g.preserved and g.rule.family.value != "inet46"
+    ]
+    grouped = [w for w in ruleset.warnings if "rule(s) emitted" in w]
+    assert len(narrowed) > len(grouped), "grouping must actually collapse something"
+    assert all(any(g.intent in w for w in grouped) for g in narrowed), (
+        "grouping must not lose a rule"
+    )
 
 
 def test_every_generated_rule_names_itself_in_the_log() -> None:
