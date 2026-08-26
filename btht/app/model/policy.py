@@ -18,6 +18,7 @@ the inventory it will hang from.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from ipaddress import IPv4Interface, IPv6Interface, ip_address, ip_interface, ip_network
 from pathlib import Path
 from typing import Any
@@ -305,3 +306,344 @@ def parse_address(text: str) -> Any:
     if not raw:
         return None
     return ip_interface(raw) if "/" in raw else ip_address(raw)
+
+
+# ===========================================================================
+#  Policy — what the operator wants permitted
+# ===========================================================================
+#
+# The inventory above says what the estate *is*. This says what it should *do*.
+# Both live in one document because a policy that refers to a segment the estate
+# does not have is a mistake worth catching at load, not at generation.
+#
+# Only enclave policy is declared. The management, scoring and essential-services
+# blocks and the trailing deny are generated in the right positions — hand-writing
+# them is how a rule ends up below the catch-all that was supposed to be beneath it.
+
+
+@dataclass(frozen=True, slots=True)
+class Selector:
+    """Who a rule applies to. Empty means unset, which is never read as `any`."""
+
+    any: bool = False
+    alias: str = ""
+    host: str = ""
+    segments: tuple[str, ...] = ()
+    enclaves: tuple[str, ...] = ()
+
+    @property
+    def declared(self) -> bool:
+        return bool(self.any or self.alias or self.host or self.segments or self.enclaves)
+
+
+@dataclass(frozen=True, slots=True)
+class ServiceRule:
+    """One thing that must work. The unit the operator actually thinks in."""
+
+    name: str
+    segment: str = ""
+    host: str = ""
+    alias: str = ""
+    protocol: str = "tcp"
+    ports: tuple[int, ...] = ()
+    source: Selector = Selector()
+    notes: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class EgressAllow:
+    source: Selector = Selector()
+    destination: Selector = Selector()
+    protocol: str = "tcp"
+    ports: tuple[int, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class EgressPolicy:
+    default: str = "deny_and_log"
+    allow: tuple[EgressAllow, ...] = ()
+    notes: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class PolicyAlias:
+    name: str
+    type: str = "network"
+    entries: tuple[str, ...] = ()
+    nested_aliases: tuple[str, ...] = ()
+    segments: tuple[str, ...] = ()
+    lockout_critical: bool = False
+    descr: str = ""
+
+    @property
+    def is_empty(self) -> bool:
+        return not (self.entries or self.nested_aliases or self.segments)
+
+
+@dataclass(frozen=True, slots=True)
+class Dependency:
+    """A path between enclaves, declared once.
+
+    The generator emits the egress rule on the source firewall *and* the ingress rule
+    on the destination, so the pair cannot drift apart. `V-CROSS-ENCLAVE-ORPHAN` fires
+    if one later goes missing.
+    """
+
+    name: str
+    from_enclaves: tuple[str, ...] = ()
+    from_segments: tuple[str, ...] = ()
+    to_enclave: str = ""
+    to_alias: str = ""
+    to_host: str = ""
+    protocol: str = "tcp"
+    ports: tuple[int, ...] = ()
+    notes: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class Options:
+    mandatory_blocks_placement: str = "floating"
+    emit_separators: bool = True
+    emit_trackers: bool = True
+    dual_stack: str = "require"
+    icmp6_minimum: tuple[int, ...] = (2, 128, 129, 133, 134, 135, 136)
+
+
+@dataclass(frozen=True, slots=True)
+class FirewallPolicy:
+    enclave: str
+    baseline: str = ""
+    services: tuple[ServiceRule, ...] = ()
+    egress: EgressPolicy = EgressPolicy()
+
+
+@dataclass(frozen=True, slots=True)
+class Policy:
+    aliases: tuple[PolicyAlias, ...] = ()
+    dependencies: tuple[Dependency, ...] = ()
+    firewalls: tuple[FirewallPolicy, ...] = ()
+    options: Options = Options()
+
+    def for_enclave(self, enclave: str) -> FirewallPolicy | None:
+        for entry in self.firewalls:
+            if entry.enclave == enclave:
+                return entry
+        return None
+
+
+def _selector(value: Any) -> Selector:
+    if value in (None, ""):
+        return Selector()
+    if value == "any":
+        return Selector(any=True)
+    if isinstance(value, dict):
+        enclave = value.get("enclave")
+        return Selector(
+            any=bool(value.get("any", False)),
+            alias=str(value.get("alias", "")),
+            host=str(value.get("host", "")),
+            segments=tuple(str(s) for s in value.get("segments", ())),
+            enclaves=(
+                (str(enclave),) if enclave else tuple(str(e) for e in value.get("enclaves", ()))
+            ),
+        )
+    raise EstateFileError(f"policy: cannot read selector {value!r}")
+
+
+def _ports(value: Any) -> tuple[int, ...]:
+    ports = tuple(int(p) for p in value or ())
+    for port in ports:
+        if not 0 < port <= 65535:
+            raise EstateFileError(f"policy: port {port} is not a port")
+    return ports
+
+
+def _policy_alias(data: dict[str, Any]) -> PolicyAlias:
+    plain: list[str] = []
+    nested: list[str] = []
+    segments: list[str] = []
+    for entry in data.get("entries", ()) or ():
+        if isinstance(entry, dict):
+            if "alias" in entry:
+                nested.append(str(entry["alias"]))
+            elif "segment" in entry:
+                segments.append(str(entry["segment"]))
+            else:
+                raise EstateFileError(f"policy: cannot read alias entry {entry!r}")
+        else:
+            plain.append(str(entry))
+    return PolicyAlias(
+        name=str(data["name"]),
+        type=str(data.get("type", "network")),
+        entries=tuple(plain),
+        nested_aliases=tuple(nested),
+        segments=tuple(segments),
+        lockout_critical=bool(data.get("lockout_critical", False)),
+        descr=str(data.get("descr", "")),
+    )
+
+
+def load_policy(path: Path) -> Policy:
+    data: dict[str, Any] = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    options = data.get("options", {}) or {}
+
+    firewalls: list[FirewallPolicy] = []
+    for entry in data.get("firewalls", ()) or ():
+        egress = entry.get("egress", {}) or {}
+        firewalls.append(
+            FirewallPolicy(
+                enclave=str(entry["enclave"]),
+                baseline=str(entry.get("baseline", "")),
+                services=tuple(
+                    ServiceRule(
+                        name=str(s.get("name", "")),
+                        segment=str(s.get("segment", "")),
+                        host=str(s.get("host", "")),
+                        alias=str(s.get("alias", "")),
+                        protocol=str(s.get("protocol", "tcp")),
+                        ports=_ports(s.get("ports")),
+                        source=_selector(s.get("from")),
+                        notes=str(s.get("notes", "")).strip(),
+                    )
+                    for s in entry.get("services", ()) or ()
+                ),
+                egress=EgressPolicy(
+                    default=str(egress.get("default", "deny_and_log")),
+                    allow=tuple(
+                        EgressAllow(
+                            source=_selector(a.get("from")),
+                            destination=_selector(a.get("to")),
+                            protocol=str(a.get("protocol", "tcp")),
+                            ports=_ports(a.get("ports")),
+                        )
+                        for a in egress.get("allow", ()) or ()
+                    ),
+                    notes=str(egress.get("notes", "")).strip(),
+                ),
+            )
+        )
+
+    return Policy(
+        aliases=tuple(_policy_alias(a) for a in data.get("aliases", ()) or ()),
+        dependencies=tuple(
+            Dependency(
+                name=str(d.get("name", "")),
+                from_enclaves=tuple(str(e) for e in (d.get("from", {}) or {}).get("enclaves", ())),
+                from_segments=tuple(str(s) for s in (d.get("from", {}) or {}).get("segments", ())),
+                to_enclave=str((d.get("to", {}) or {}).get("enclave", "")),
+                to_alias=str((d.get("to", {}) or {}).get("alias", "")),
+                to_host=str((d.get("to", {}) or {}).get("host", "")),
+                protocol=str(d.get("protocol", "tcp")),
+                ports=_ports(d.get("ports")),
+                notes=str(d.get("notes", "")).strip(),
+            )
+            for d in data.get("dependencies", ()) or ()
+        ),
+        firewalls=tuple(firewalls),
+        options=Options(
+            mandatory_blocks_placement=str(options.get("mandatory_blocks_placement", "floating")),
+            emit_separators=bool(options.get("emit_separators", True)),
+            emit_trackers=bool(options.get("emit_trackers", True)),
+            dual_stack=str(options.get("dual_stack", "require")),
+            icmp6_minimum=tuple(int(t) for t in options.get("icmp6_minimum", ()) or ())
+            or Options().icmp6_minimum,
+        ),
+    )
+
+
+def validate_policy(policy: Policy, estate: Estate) -> list[str]:
+    """Check the policy against the declared estate. Returns problems, in words.
+
+    Every one of these is a case where generating anyway would produce a ruleset that
+    looks right and is not: a rule for a segment that does not exist silently protects
+    nothing, and an alias that resolves to nothing produces a rule matching nothing.
+    Refusing beats generating something plausible — `SPEC.md` §2.
+    """
+    problems: list[str] = []
+    enclaves = {fw.enclave for fw in estate.firewalls}
+    segments_by_enclave = {fw.enclave: {i.role for i in fw.interfaces} for fw in estate.firewalls}
+    all_segments = {role for roles in segments_by_enclave.values() for role in roles}
+    alias_names = {a.name for a in policy.aliases}
+
+    def check_selector(where: str, selector: Selector, enclave: str | None) -> None:
+        if not selector.declared:
+            problems.append(f"{where}: no source declared. 'any' has to be said out loud")
+        if selector.alias and selector.alias not in alias_names:
+            problems.append(f"{where}: alias {selector.alias!r} is not declared")
+        known = segments_by_enclave.get(enclave or "", all_segments)
+        for segment in selector.segments:
+            if segment not in known:
+                problems.append(
+                    f"{where}: segment {segment!r} is not a segment of {enclave or 'this estate'}"
+                )
+        for name in selector.enclaves:
+            if name not in enclaves:
+                problems.append(f"{where}: enclave {name!r} is not in the estate")
+
+    for entry in policy.firewalls:
+        if entry.enclave not in enclaves:
+            problems.append(f"policy for {entry.enclave!r}: no such enclave in the estate")
+            continue
+        segments = segments_by_enclave[entry.enclave]
+        for service in entry.services:
+            where = f"{entry.enclave}/{service.name or 'unnamed service'}"
+            if not service.name:
+                problems.append(f"{entry.enclave}: a service has no name to show the operator")
+            if service.segment and service.segment not in segments:
+                problems.append(
+                    f"{where}: segment {service.segment!r} is not a segment of {entry.enclave}"
+                )
+            if service.alias and service.alias not in alias_names:
+                problems.append(f"{where}: alias {service.alias!r} is not declared")
+            if not service.ports:
+                problems.append(f"{where}: no ports. An allow-all needs saying deliberately")
+            check_selector(where, service.source, entry.enclave)
+
+        if entry.egress.default not in ("deny_and_log", "deny", "allow"):
+            problems.append(
+                f"{entry.enclave}: egress default {entry.egress.default!r} is not one of "
+                "deny_and_log, deny, allow"
+            )
+        for index, allow in enumerate(entry.egress.allow, start=1):
+            where = f"{entry.enclave}/egress allow {index}"
+            check_selector(where, allow.source, entry.enclave)
+            check_selector(where, allow.destination, None)
+
+    for dependency in policy.dependencies:
+        where = f"dependency {dependency.name or '(unnamed)'}"
+        for name in dependency.from_enclaves:
+            if name not in enclaves:
+                problems.append(f"{where}: source enclave {name!r} is not in the estate")
+        if dependency.to_enclave and dependency.to_enclave not in enclaves:
+            problems.append(
+                f"{where}: destination enclave {dependency.to_enclave!r} is not in the estate"
+            )
+        if dependency.to_alias and dependency.to_alias not in alias_names:
+            problems.append(f"{where}: alias {dependency.to_alias!r} is not declared")
+        if not dependency.ports:
+            problems.append(f"{where}: no ports declared")
+
+    for alias in policy.aliases:
+        for nested in alias.nested_aliases:
+            if nested not in alias_names and nested not in {"Remote_Access", "Routers"}:
+                problems.append(
+                    f"alias {alias.name}: nests {nested!r}, which is neither declared here "
+                    "nor a baseline alias"
+                )
+        for segment in alias.segments:
+            if segment not in all_segments:
+                problems.append(
+                    f"alias {alias.name}: segment {segment!r} is not a segment of this estate"
+                )
+
+    return problems
+
+
+def empty_aliases(policy: Policy) -> list[str]:
+    """Aliases declared but not yet filled in.
+
+    Not an error — the worked example ships several awaiting an answer from Green
+    Team — but every one produces a rule that matches nothing, so it is surfaced
+    rather than left to be discovered at scoring time.
+    """
+    return [alias.name for alias in policy.aliases if alias.is_empty]

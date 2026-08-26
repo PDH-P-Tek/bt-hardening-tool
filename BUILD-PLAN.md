@@ -7,7 +7,7 @@ on something outside the code.
 **This does not replace those lists.** Every step cites its source, and the source
 stays authoritative on *what* the step must do. This file is authoritative on *when*.
 
-Status: **Phases 0 and 1 complete. Phase 2 in progress** — 2.1 and 2.2 done, 2.3 (policy schema) next.
+Status: **Phases 0 and 1 complete. Phase 2 in progress** — 2.1, 2.2 and 2.3 done. 2.4 (wizard) next.
 
 ---
 
@@ -72,7 +72,7 @@ setup it resolves nothing and says so, which is the behaviour, not a gap.
 |---|---|---|---|
 | 2.1 | ✅ **Estate setup.** Declare the estate: enclaves and their names, each device and its platform, management addresses, interfaces and what each segment is for, what the hosts run. Establishes the role vocabulary | §4, §5.1 | An estate exists that the operator named end to end. **This is the same inventory 5.1 polls** — captured once |
 | 2.2 | ✅ **Topology view.** The declared estate drawn as inline SVG — enclaves, routers, firewalls, segments. Click a node for its detail. Deterministic tiered layout, no library | §4 | Same estate renders the same picture; a setup error is visible in it. **5.4 reuses it** with live status |
-| 2.3 | Estate policy schema and loader — the durable artefact | §4, §9 | Round-trips YAML; human-editable and diffable |
+| 2.3 | ✅ Estate policy schema and loader — the durable artefact | §4, §9 | Round-trips YAML; human-editable and diffable |
 | 2.4 | Wizard, interface by interface, **typed input only** | §5.1 | Every step completable without pasting anything |
 | 2.5 | Annex paste-parse as a shortcut inside wizard steps | §5.2 | Both annex table shapes parse; **the parse renders back for confirmation** |
 | 2.6 | ISA check assignment and service catalogue | §5.3 | Every host carries its check set; unscored hosts flagged for confirmation |
