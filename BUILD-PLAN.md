@@ -7,7 +7,7 @@ on something outside the code.
 **This does not replace those lists.** Every step cites its source, and the source
 stays authoritative on *what* the step must do. This file is authoritative on *when*.
 
-Status: nothing built. Phase 0 has not started.
+Status: **Phase 0 complete.** Phase 1 next — parse and identity.
 
 ---
 
@@ -31,10 +31,10 @@ which is why it is here.
 
 | # | Step | Done when |
 |---|---|---|
-| 0.1 | Package skeleton per `SPEC.md` §3 (`btht/`), `pyproject.toml`, pytest, ruff, mypy, task runner | `make test` runs green on an empty suite; **commands recorded in `CLAUDE.md`** |
-| 0.2 | CI on every commit, carrying the secret-exclusion test from day one | Suite runs on push; the secret test exists, even if it starts as a stub over an empty fixture set |
-| 0.3 | **The shared spine.** Estate / Firewall / Interface / Host (`SPEC.md` §4) plus what the monitor needs on top: platform type, management address, credential reference | One model, imported by both halves. No second inventory anywhere |
-| 0.4 | Sanitised fixtures (`SPEC.md` §10.1) — protected set, `dsoc` LAN inversion, `mcu` straddle, placeholder addressing | Fixtures load; secret-exclusion test now has real credential-bearing input to prove itself against |
+| 0.1 | ✅ Package skeleton per `SPEC.md` §3 (`btht/`), `pyproject.toml`, pytest, ruff, mypy, task runner | `make test` runs green on an empty suite; **commands recorded in `CLAUDE.md`** |
+| 0.2 | ✅ CI on every commit, carrying the secret-exclusion test from day one | Suite runs on push; the secret test exists, even if it starts as a stub over an empty fixture set |
+| 0.3 | ✅ **The shared spine.** Estate / Firewall / Interface / Host (`SPEC.md` §4) plus what the monitor needs on top: platform type, management address, credential reference | One model, imported by both halves. No second inventory anywhere |
+| 0.4 | ✅ Sanitised fixtures (`SPEC.md` §10.1) — protected set, `dsoc` LAN inversion, `mcu` straddle, placeholder addressing | Fixtures load; secret-exclusion test now has real credential-bearing input to prove itself against |
 
 > 0.4 is the step it is tempting to defer. Almost every test downstream needs it, and
 > building fixtures late means building them to fit whatever the code already does.

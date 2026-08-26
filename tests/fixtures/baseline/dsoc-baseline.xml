@@ -1,0 +1,167 @@
+<?xml version="1.0"?>
+<!--
+  SANITISED FIXTURE. Hand-built, not exported. SPEC.md section 10.1.
+
+  THE INVERSION. On dsoc, lan is the SERVER segment and opt1 is workstations
+  the opposite of every other enclave. BASELINE-ANALYSIS F2.
+
+  Any logic keyed to lan/opt1 rather than to the derived role gets this
+  firewall backwards, and applying a do ruleset here would be destructive.
+  That is what this fixture is for.
+-->
+<pfsense>
+  <version>23.3</version>
+  <system>
+    <hostname>fw1</hostname>
+    <domain>dsoc.42.dcm.ex</domain>
+    <disablenatreflection>yes</disablenatreflection>
+    <noantilockout></noantilockout>
+    <webgui>
+      <protocol>https</protocol>
+    </webgui>
+    <filterdescriptions>1</filterdescriptions>
+  </system>
+  <interfaces>
+    <wan>
+      <if>vmx0</if>
+      <descr>bt_wan_dsoc</descr>
+      <enable></enable>
+      <ipaddr>25.42.0.14</ipaddr>
+      <subnet>24</subnet>
+      <ipaddrv6>fd81:25:42::14</ipaddrv6>
+      <subnetv6>64</subnetv6>
+    </wan>
+    <lan>
+      <if>vmx2</if>
+      <descr>dsoc_svrs</descr>
+      <enable></enable>
+      <ipaddr>25.42.7.1</ipaddr>
+      <subnet>24</subnet>
+      <ipaddrv6>fd81:25:42:7::1</ipaddrv6>
+      <subnetv6>64</subnetv6>
+    </lan>
+    <opt1>
+      <if>vmx1</if>
+      <descr>dsoc_ws</descr>
+      <enable></enable>
+      <ipaddr>25.42.8.1</ipaddr>
+      <subnet>24</subnet>
+      <ipaddrv6>fd81:25:42:8::1</ipaddrv6>
+      <subnetv6>64</subnetv6>
+    </opt1>
+  </interfaces>
+  <aliases>
+    <alias>
+      <name>Routers</name>
+      <type>host</type>
+      <address>25.42.0.1 25.42.0.2 25.42.0.3 fd81:10:42::1 fd81:10:42::2 fd81:10:42::3</address>
+      <descr>r1 and r2</descr>
+      <detail>Created 14/11/2023||Created 14/11/2023||Created 14/11/2023||Created 14/11/2023||Created 14/11/2023||Created 14/11/2023</detail>
+    </alias>
+    <alias>
+      <name>Remote_Access</name>
+      <type>network</type>
+      <address>172.21.31.0/24 198.18.128.0/24 198.19.42.0/24 172.21.28.0/24 172.21.29.0/24 fd81:172:21:31::/64 fd81:198:18:128::/64 fd81:198:19:42::/64 fd81:172:21:28::/64 fd81:172:21:29::/64</address>
+      <descr>Remote access ranges</descr>
+      <detail>Green Team VPN||White Team VPN||Blue Team VPN||Green Team Local||Green Team Tools||Green Team VPN v6||White Team VPN v6||Blue Team VPN v6||Green Team Local v6||Green Team Tools v6</detail>
+    </alias>
+  </aliases>
+  <filter>
+    <rule>
+      <tracker>1699910001</tracker>
+      <type>pass</type>
+      <interface>wan,lan,opt1</interface>
+      <floating>yes</floating>
+      <direction>any</direction>
+      <ipprotocol>inet46</ipprotocol>
+      <protocol>tcp/udp</protocol>
+      <source><any></any></source>
+      <destination><any></any><port>53</port></destination>
+      <descr></descr>
+    </rule>
+    <rule>
+      <tracker>1699910002</tracker>
+      <type>pass</type>
+      <interface>wan,lan,opt1</interface>
+      <floating>yes</floating>
+      <direction>any</direction>
+      <ipprotocol>inet46</ipprotocol>
+      <protocol>udp</protocol>
+      <source><any></any></source>
+      <destination><any></any><port>123</port></destination>
+      <descr></descr>
+    </rule>
+    <rule>
+      <tracker>1699910003</tracker>
+      <type>pass</type>
+      <interface>wan,lan,opt1</interface>
+      <floating>yes</floating>
+      <direction>any</direction>
+      <ipprotocol>inet46</ipprotocol>
+      <protocol>icmp</protocol>
+      <icmptype>any</icmptype>
+      <source><any></any></source>
+      <destination><any></any></destination>
+      <descr></descr>
+    </rule>
+    <rule>
+      <tracker>1699910004</tracker>
+      <type>pass</type>
+      <interface>wan</interface>
+      <ipprotocol>inet46</ipprotocol>
+      <source><address>Remote_Access</address></source>
+      <destination><any></any></destination>
+      <descr>VPN access for exercise participants</descr>
+    </rule>
+    <rule>
+      <tracker>1699910005</tracker>
+      <type>pass</type>
+      <interface>wan</interface>
+      <ipprotocol>inet46</ipprotocol>
+      <source><address>Routers</address></source>
+      <destination><network>(self)</network></destination>
+      <descr>Routing information exchange</descr>
+    </rule>
+    <rule>
+      <tracker>1699910006</tracker>
+      <type>pass</type>
+      <interface>wan</interface>
+      <ipprotocol>inet46</ipprotocol>
+      <source><network>(self)</network></source>
+      <destination><any></any></destination>
+      <descr>Firewall outbound traffic</descr>
+    </rule>
+    <rule>
+      <tracker>1699910007</tracker>
+      <type>pass</type>
+      <interface>wan</interface>
+      <ipprotocol>inet46</ipprotocol>
+      <source><any></any></source>
+      <destination><any></any></destination>
+      <descr></descr>
+    </rule>
+    <rule>
+      <tracker>1699910008</tracker>
+      <type>pass</type>
+      <interface>lan</interface>
+      <ipprotocol>inet46</ipprotocol>
+      <source><any></any></source>
+      <destination><any></any></destination>
+      <descr></descr>
+    </rule>
+    <rule>
+      <tracker>1699910009</tracker>
+      <type>pass</type>
+      <interface>opt1</interface>
+      <ipprotocol>inet46</ipprotocol>
+      <source><any></any></source>
+      <destination><any></any></destination>
+      <descr></descr>
+    </rule>
+  </filter>
+  <nat>
+    <outbound>
+      <mode>disabled</mode>
+    </outbound>
+  </nat>
+</pfsense>

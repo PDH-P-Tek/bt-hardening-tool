@@ -1,0 +1,192 @@
+<?xml version="1.0"?>
+<!--
+  SANITISED FIXTURE. Hand-built, not exported. SPEC.md section 10.1.
+
+  Reproduces the structure of a shipped Green Team baseline for a standard
+  deployed enclave: lan=ws, opt1=svrs, opt2=dmz. Team 42, the annexes' own
+  worked example, so no real team's addressing appears here.
+
+  Deliberate faults preserved because the tool exists to find them:
+    - Routers alias carries fd81:10:42:: (Host Nation prefix) on a deployed
+      enclave, so rule 5 never matches the v6 peers. BASELINE-ANALYSIS F1.
+    - Floating rules are non-quick. F3.
+    - Rule 7 and the internal rules are pass any -> any. EVIDENCE E1.
+  No credential-bearing element appears anywhere in this file.
+-->
+<pfsense>
+  <version>23.3</version>
+  <system>
+    <hostname>fw1</hostname>
+    <domain>do.42.dcm.ex</domain>
+    <disablenatreflection>yes</disablenatreflection>
+    <noantilockout></noantilockout>
+    <webgui>
+      <protocol>https</protocol>
+    </webgui>
+    <filterdescriptions>1</filterdescriptions>
+  </system>
+  <interfaces>
+    <wan>
+      <if>vmx0</if>
+      <descr>bt_wan_do</descr>
+      <enable></enable>
+      <ipaddr>25.42.0.10</ipaddr>
+      <subnet>24</subnet>
+      <ipaddrv6>fd81:25:42::10</ipaddrv6>
+      <subnetv6>64</subnetv6>
+    </wan>
+    <lan>
+      <if>vmx1</if>
+      <descr>do_ws</descr>
+      <enable></enable>
+      <ipaddr>25.42.9.1</ipaddr>
+      <subnet>24</subnet>
+      <ipaddrv6>fd81:25:42:9::1</ipaddrv6>
+      <subnetv6>64</subnetv6>
+    </lan>
+    <opt1>
+      <if>vmx2</if>
+      <descr>do_svrs</descr>
+      <enable></enable>
+      <ipaddr>25.42.10.1</ipaddr>
+      <subnet>24</subnet>
+      <ipaddrv6>fd81:25:42:10::1</ipaddrv6>
+      <subnetv6>64</subnetv6>
+    </opt1>
+    <opt2>
+      <if>vmx3</if>
+      <descr>do_dmz</descr>
+      <enable></enable>
+      <ipaddr>25.42.11.1</ipaddr>
+      <subnet>24</subnet>
+      <ipaddrv6>fd81:25:42:11::1</ipaddrv6>
+      <subnetv6>64</subnetv6>
+    </opt2>
+  </interfaces>
+  <aliases>
+    <alias>
+      <name>Routers</name>
+      <type>host</type>
+      <address>25.42.0.1 25.42.0.2 25.42.0.3 fd81:10:42::1 fd81:10:42::2 fd81:10:42::3</address>
+      <descr>r1 and r2</descr>
+      <detail>Created 14/11/2023||Created 14/11/2023||Created 14/11/2023||Created 14/11/2023||Created 14/11/2023||Created 14/11/2023</detail>
+    </alias>
+    <alias>
+      <name>Remote_Access</name>
+      <type>network</type>
+      <address>172.21.31.0/24 198.18.128.0/24 198.19.42.0/24 172.21.28.0/24 172.21.29.0/24 fd81:172:21:31::/64 fd81:198:18:128::/64 fd81:198:19:42::/64 fd81:172:21:28::/64 fd81:172:21:29::/64</address>
+      <descr>Remote access ranges</descr>
+      <detail>Green Team VPN||White Team VPN||Blue Team VPN||Green Team Local||Green Team Tools||Green Team VPN v6||White Team VPN v6||Blue Team VPN v6||Green Team Local v6||Green Team Tools v6</detail>
+    </alias>
+  </aliases>
+  <filter>
+    <!-- 1-3: floating, non-quick, all interfaces, empty descriptions -->
+    <rule>
+      <tracker>1699900001</tracker>
+      <type>pass</type>
+      <interface>wan,lan,opt1,opt2</interface>
+      <floating>yes</floating>
+      <direction>any</direction>
+      <ipprotocol>inet46</ipprotocol>
+      <protocol>tcp/udp</protocol>
+      <source><any></any></source>
+      <destination><any></any><port>53</port></destination>
+      <descr></descr>
+    </rule>
+    <rule>
+      <tracker>1699900002</tracker>
+      <type>pass</type>
+      <interface>wan,lan,opt1,opt2</interface>
+      <floating>yes</floating>
+      <direction>any</direction>
+      <ipprotocol>inet46</ipprotocol>
+      <protocol>udp</protocol>
+      <source><any></any></source>
+      <destination><any></any><port>123</port></destination>
+      <descr></descr>
+    </rule>
+    <rule>
+      <tracker>1699900003</tracker>
+      <type>pass</type>
+      <interface>wan,lan,opt1,opt2</interface>
+      <floating>yes</floating>
+      <direction>any</direction>
+      <ipprotocol>inet46</ipprotocol>
+      <protocol>icmp</protocol>
+      <icmptype>any</icmptype>
+      <source><any></any></source>
+      <destination><any></any></destination>
+      <descr></descr>
+    </rule>
+    <!-- 4-7: WAN -->
+    <rule>
+      <tracker>1699900004</tracker>
+      <type>pass</type>
+      <interface>wan</interface>
+      <ipprotocol>inet46</ipprotocol>
+      <source><address>Remote_Access</address></source>
+      <destination><any></any></destination>
+      <descr>VPN access for exercise participants</descr>
+    </rule>
+    <rule>
+      <tracker>1699900005</tracker>
+      <type>pass</type>
+      <interface>wan</interface>
+      <ipprotocol>inet46</ipprotocol>
+      <source><address>Routers</address></source>
+      <destination><network>(self)</network></destination>
+      <descr>Routing information exchange</descr>
+    </rule>
+    <rule>
+      <tracker>1699900006</tracker>
+      <type>pass</type>
+      <interface>wan</interface>
+      <ipprotocol>inet46</ipprotocol>
+      <source><network>(self)</network></source>
+      <destination><any></any></destination>
+      <descr>Firewall outbound traffic</descr>
+    </rule>
+    <rule>
+      <tracker>1699900007</tracker>
+      <type>pass</type>
+      <interface>wan</interface>
+      <ipprotocol>inet46</ipprotocol>
+      <source><any></any></source>
+      <destination><any></any></destination>
+      <descr></descr>
+    </rule>
+    <!-- internal: one permissive default per interface -->
+    <rule>
+      <tracker>1699900008</tracker>
+      <type>pass</type>
+      <interface>lan</interface>
+      <ipprotocol>inet46</ipprotocol>
+      <source><any></any></source>
+      <destination><any></any></destination>
+      <descr></descr>
+    </rule>
+    <rule>
+      <tracker>1699900009</tracker>
+      <type>pass</type>
+      <interface>opt1</interface>
+      <ipprotocol>inet46</ipprotocol>
+      <source><any></any></source>
+      <destination><any></any></destination>
+      <descr></descr>
+    </rule>
+    <rule>
+      <tracker>1699900010</tracker>
+      <type>pass</type>
+      <interface>opt2</interface>
+      <ipprotocol>inet46</ipprotocol>
+      <source><any></any></source>
+      <destination><any></any></destination>
+      <descr></descr>
+    </rule>
+  </filter>
+  <nat>
+    <outbound>
+      <mode>disabled</mode>
+    </outbound>
+  </nat>
+</pfsense>

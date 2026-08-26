@@ -17,6 +17,18 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SELF = Path(__file__).resolve()
 
+#: The one exempt path. `tests/fixtures/credentials/` holds deliberately
+#: credential-shaped material so the parser can be *proved* to drop it rather
+#: than assumed to. The exemption is guarded by
+#: `test_credential_fixtures_are_marked_synthetic`: every file there must carry
+#: the marker, so a real secret cannot be dropped in quietly.
+CREDENTIAL_FIXTURES = REPO_ROOT / "tests" / "fixtures" / "credentials"
+SYNTHETIC_MARKER = "SYNTHETIC-TEST-CREDENTIAL-NOT-REAL"
+
+
+def is_exempt(path: Path) -> bool:
+    return CREDENTIAL_FIXTURES in path.resolve().parents
+
 #: Each pattern describes credential *material*, not a mention of it. Documentation
 #: says "ssh-ed25519 AAAA..." and "NOPASSWD: ALL" in several places; those are
 #: descriptions of a posture, and must not trip the scan. A real key body is long.
@@ -62,7 +74,7 @@ def scan(path: Path) -> list[str]:
 def test_tracked_files_carry_no_credential_material() -> None:
     findings: list[str] = []
     for path in tracked_files():
-        if path.resolve() == SELF:
+        if path.resolve() == SELF or is_exempt(path):
             continue
         for name in scan(path):
             findings.append(f"{path.relative_to(REPO_ROOT)}: {name}")
@@ -70,13 +82,12 @@ def test_tracked_files_carry_no_credential_material() -> None:
 
 
 def test_fixtures_carry_no_credential_material() -> None:
-    """Fixtures are hand-built and sanitised — `SPEC.md` §10.1.
-
-    Empty until Phase 0.4 lands them; the loop is the assertion, not the count.
-    """
+    """Fixtures are hand-built and sanitised — `SPEC.md` §10.1."""
     fixtures = sorted((REPO_ROOT / "tests" / "fixtures").rglob("*"))
     findings: list[str] = []
     for path in fixtures:
+        if is_exempt(path):
+            continue
         for name in scan(path):
             findings.append(f"{path.relative_to(REPO_ROOT)}: {name}")
     assert not findings, "credential material in fixtures:\n  " + "\n  ".join(findings)
@@ -104,3 +115,23 @@ def test_gitignore_covers_working_data() -> None:
     ignored = set(result.stdout.split())
     missing = [p for p in must_be_ignored if p not in ignored]
     assert not missing, f"paths that must be gitignored but are not: {missing}"
+
+
+def test_credential_fixtures_are_marked_synthetic() -> None:
+    """Guards the one exemption above.
+
+    A file in the credential fixture directory is invisible to the scan, so it
+    must announce itself as invented. Anything without the marker is treated as
+    a real secret that has been put somewhere it would not be noticed.
+    """
+    if not CREDENTIAL_FIXTURES.is_dir():
+        return
+    unmarked = [
+        str(p.relative_to(REPO_ROOT))
+        for p in sorted(CREDENTIAL_FIXTURES.rglob("*"))
+        if p.is_file() and SYNTHETIC_MARKER not in p.read_text(encoding="utf-8", errors="ignore")
+    ]
+    assert not unmarked, (
+        "files in the exempt credential-fixture directory without the "
+        f"{SYNTHETIC_MARKER} marker: {unmarked}"
+    )

@@ -1,0 +1,210 @@
+<?xml version="1.0"?>
+<!--
+  SANITISED FIXTURE. Hand-built, not exported. SPEC.md section 10.1.
+
+  THE STRADDLE. mcu has its WAN on the Host Nation side (10.42.80.16) and all
+  of its internal segments in deployed addressing (25.42.26-30).
+  BASELINE-ANALYSIS section 2.
+
+  estate_side must be derived from the WAN address, never from the internal
+  ranges. Anything that reads 25.x and concludes "deployed" gets this wrong.
+  Its Routers alias uses the Host Nation 10.42.0.x form, as observed there.
+-->
+<pfsense>
+  <version>23.3</version>
+  <system>
+    <hostname>fw1</hostname>
+    <domain>mcu.42.dcm.ex</domain>
+    <disablenatreflection>yes</disablenatreflection>
+    <noantilockout></noantilockout>
+    <webgui>
+      <protocol>https</protocol>
+    </webgui>
+    <filterdescriptions>1</filterdescriptions>
+  </system>
+  <interfaces>
+    <wan>
+      <if>vmx0</if>
+      <descr>hn_wan_mcu</descr>
+      <enable></enable>
+      <ipaddr>10.42.80.16</ipaddr>
+      <subnet>24</subnet>
+    </wan>
+    <lan>
+      <if>vmx1</if>
+      <descr>mcu_dmz</descr>
+      <enable></enable>
+      <ipaddr>25.42.26.1</ipaddr>
+      <subnet>24</subnet>
+    </lan>
+    <opt1>
+      <if>vmx2</if>
+      <descr>mcu_port1</descr>
+      <enable></enable>
+      <ipaddr>25.42.27.1</ipaddr>
+      <subnet>24</subnet>
+    </opt1>
+    <opt2>
+      <if>vmx3</if>
+      <descr>mcu_port2</descr>
+      <enable></enable>
+      <ipaddr>25.42.28.1</ipaddr>
+      <subnet>24</subnet>
+    </opt2>
+    <opt3>
+      <if>vmx4</if>
+      <descr>mcu_stbd1</descr>
+      <enable></enable>
+      <ipaddr>25.42.29.1</ipaddr>
+      <subnet>24</subnet>
+    </opt3>
+    <opt4>
+      <if>vmx5</if>
+      <descr>mcu_stbd2</descr>
+      <enable></enable>
+      <ipaddr>25.42.30.1</ipaddr>
+      <subnet>24</subnet>
+    </opt4>
+  </interfaces>
+  <aliases>
+    <alias>
+      <name>Routers</name>
+      <type>host</type>
+      <address>10.42.0.1 10.42.0.2 10.42.0.3 fd81:10:42::1 fd81:10:42::2 fd81:10:42::3</address>
+      <descr>r1 and r2</descr>
+      <detail>Created 14/11/2023||Created 14/11/2023||Created 14/11/2023||Created 14/11/2023||Created 14/11/2023||Created 14/11/2023</detail>
+    </alias>
+    <alias>
+      <name>Remote_Access</name>
+      <type>network</type>
+      <address>172.21.31.0/24 198.18.128.0/24 198.19.42.0/24 172.21.28.0/24 172.21.29.0/24</address>
+      <descr>Remote access ranges</descr>
+      <detail>Green Team VPN||White Team VPN||Blue Team VPN||Green Team Local||Green Team Tools</detail>
+    </alias>
+  </aliases>
+  <filter>
+    <rule>
+      <tracker>1699920001</tracker>
+      <type>pass</type>
+      <interface>wan,lan,opt1,opt2,opt3,opt4</interface>
+      <floating>yes</floating>
+      <direction>any</direction>
+      <ipprotocol>inet46</ipprotocol>
+      <protocol>tcp/udp</protocol>
+      <source><any></any></source>
+      <destination><any></any><port>53</port></destination>
+      <descr></descr>
+    </rule>
+    <rule>
+      <tracker>1699920002</tracker>
+      <type>pass</type>
+      <interface>wan,lan,opt1,opt2,opt3,opt4</interface>
+      <floating>yes</floating>
+      <direction>any</direction>
+      <ipprotocol>inet46</ipprotocol>
+      <protocol>udp</protocol>
+      <source><any></any></source>
+      <destination><any></any><port>123</port></destination>
+      <descr></descr>
+    </rule>
+    <rule>
+      <tracker>1699920003</tracker>
+      <type>pass</type>
+      <interface>wan,lan,opt1,opt2,opt3,opt4</interface>
+      <floating>yes</floating>
+      <direction>any</direction>
+      <ipprotocol>inet46</ipprotocol>
+      <protocol>icmp</protocol>
+      <icmptype>any</icmptype>
+      <source><any></any></source>
+      <destination><any></any></destination>
+      <descr></descr>
+    </rule>
+    <rule>
+      <tracker>1699920004</tracker>
+      <type>pass</type>
+      <interface>wan</interface>
+      <ipprotocol>inet46</ipprotocol>
+      <source><address>Remote_Access</address></source>
+      <destination><any></any></destination>
+      <descr>VPN access for exercise participants</descr>
+    </rule>
+    <rule>
+      <tracker>1699920005</tracker>
+      <type>pass</type>
+      <interface>wan</interface>
+      <ipprotocol>inet46</ipprotocol>
+      <source><address>Routers</address></source>
+      <destination><network>(self)</network></destination>
+      <descr>Routing information exchange</descr>
+    </rule>
+    <rule>
+      <tracker>1699920006</tracker>
+      <type>pass</type>
+      <interface>wan</interface>
+      <ipprotocol>inet46</ipprotocol>
+      <source><network>(self)</network></source>
+      <destination><any></any></destination>
+      <descr>Firewall outbound traffic</descr>
+    </rule>
+    <rule>
+      <tracker>1699920007</tracker>
+      <type>pass</type>
+      <interface>wan</interface>
+      <ipprotocol>inet46</ipprotocol>
+      <source><any></any></source>
+      <destination><any></any></destination>
+      <descr></descr>
+    </rule>
+    <rule>
+      <tracker>1699920008</tracker>
+      <type>pass</type>
+      <interface>lan</interface>
+      <ipprotocol>inet46</ipprotocol>
+      <source><any></any></source>
+      <destination><any></any></destination>
+      <descr></descr>
+    </rule>
+    <rule>
+      <tracker>1699920009</tracker>
+      <type>pass</type>
+      <interface>opt1</interface>
+      <ipprotocol>inet46</ipprotocol>
+      <source><any></any></source>
+      <destination><any></any></destination>
+      <descr></descr>
+    </rule>
+    <rule>
+      <tracker>1699920010</tracker>
+      <type>pass</type>
+      <interface>opt2</interface>
+      <ipprotocol>inet46</ipprotocol>
+      <source><any></any></source>
+      <destination><any></any></destination>
+      <descr></descr>
+    </rule>
+    <rule>
+      <tracker>1699920011</tracker>
+      <type>pass</type>
+      <interface>opt3</interface>
+      <ipprotocol>inet46</ipprotocol>
+      <source><any></any></source>
+      <destination><any></any></destination>
+      <descr></descr>
+    </rule>
+    <rule>
+      <tracker>1699920012</tracker>
+      <type>pass</type>
+      <interface>opt4</interface>
+      <ipprotocol>inet46</ipprotocol>
+      <source><any></any></source>
+      <destination><any></any></destination>
+      <descr></descr>
+    </rule>
+  </filter>
+  <nat>
+    <outbound>
+      <mode>disabled</mode>
+    </outbound>
+  </nat>
+</pfsense>
