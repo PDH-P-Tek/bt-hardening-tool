@@ -27,10 +27,7 @@ def load(enclave: str) -> ET.Element:
 def interfaces(root: ET.Element) -> dict[str, dict[str, str]]:
     node = root.find("interfaces")
     assert node is not None
-    return {
-        iface.tag: {child.tag: (child.text or "") for child in iface}
-        for iface in node
-    }
+    return {iface.tag: {child.tag: (child.text or "") for child in iface} for iface in node}
 
 
 @pytest.mark.parametrize("enclave", ENCLAVES)
@@ -102,9 +99,7 @@ def test_permissive_defaults_are_present(enclave: str) -> None:
         and r.find("destination/any") is not None
     ]
     interface_count = len(interfaces(root))
-    assert len(permissive) == interface_count, (
-        "one pass any -> any per interface, WAN included"
-    )
+    assert len(permissive) == interface_count, "one pass any -> any per interface, WAN included"
 
 
 @pytest.mark.parametrize("enclave", ENCLAVES)

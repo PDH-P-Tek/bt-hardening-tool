@@ -66,10 +66,11 @@ it answers "what am I actually looking at" before any policy exists.
 
 | # | Step | Source | Done when |
 |---|---|---|---|
-| 2.1 | Estate policy schema and loader — the durable artefact | §4, §9 | Round-trips YAML; human-editable and diffable |
-| 2.2 | Wizard, interface by interface, **typed input only** | §5.1 | Every step completable without pasting anything |
-| 2.3 | Annex paste-parse as a shortcut inside wizard steps | §5.2 | Both Annex A and Annex G table shapes parse; **the parse renders back for confirmation** |
-| 2.4 | ISA check assignment and service catalogue | §5.3 | Every host carries its check set; unscored hosts flagged for confirmation |
+| 2.1 | **Estate setup.** Declare the estate: enclaves and their names, each device and its platform, management addresses, interfaces and what each segment is for, what the hosts run. Establishes the role vocabulary | §4, §5.1 | An estate exists that the operator named end to end. **This is the same inventory 5.1 polls** — captured once |
+| 2.2 | Estate policy schema and loader — the durable artefact | §4, §9 | Round-trips YAML; human-editable and diffable |
+| 2.3 | Wizard, interface by interface, **typed input only** | §5.1 | Every step completable without pasting anything |
+| 2.4 | Annex paste-parse as a shortcut inside wizard steps | §5.2 | Both annex table shapes parse; **the parse renders back for confirmation** |
+| 2.5 | ISA check assignment and service catalogue | §5.3 | Every host carries its check set; unscored hosts flagged for confirmation |
 
 ---
 

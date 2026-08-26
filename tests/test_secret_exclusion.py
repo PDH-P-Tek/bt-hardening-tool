@@ -29,6 +29,7 @@ SYNTHETIC_MARKER = "SYNTHETIC-TEST-CREDENTIAL-NOT-REAL"
 def is_exempt(path: Path) -> bool:
     return CREDENTIAL_FIXTURES in path.resolve().parents
 
+
 #: Each pattern describes credential *material*, not a mention of it. Documentation
 #: says "ssh-ed25519 AAAA..." and "NOPASSWD: ALL" in several places; those are
 #: descriptions of a posture, and must not trip the scan. A real key body is long.
@@ -45,8 +46,23 @@ SECRET_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
 )
 
 TEXT_SUFFIXES = {
-    ".md", ".py", ".yaml", ".yml", ".xml", ".html", ".css", ".js", ".json",
-    ".toml", ".cfg", ".ini", ".txt", ".sh", ".bash", ".sql", "",
+    ".md",
+    ".py",
+    ".yaml",
+    ".yml",
+    ".xml",
+    ".html",
+    ".css",
+    ".js",
+    ".json",
+    ".toml",
+    ".cfg",
+    ".ini",
+    ".txt",
+    ".sh",
+    ".bash",
+    ".sql",
+    "",
 }
 
 

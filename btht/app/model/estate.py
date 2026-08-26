@@ -8,6 +8,13 @@ So there are two layers here. A `Node` is anything the monitor polls. A `Firewal
 is a node the generator also has a ruleset for. Defining these together, once, is
 the point — two inventories would drift and then disagree about what the estate is.
 
+**The estate is declared, never assumed.** Enclave names, interface role tokens and
+side labels are whatever the operator sets up on day one — this module stores them
+and never supplies them. No vocabulary from any particular exercise appears in this
+package. The shipped profile and enclave templates offer *suggestions* the operator
+confirms; the fixtures reproduce one observed estate for testing. Neither is a
+default the code may fall back on.
+
 Nothing in this module reaches the network, reads a file or holds a secret. A node
 carries the *name* of a credential, never the credential.
 """
@@ -20,24 +27,6 @@ from ipaddress import IPv4Address, IPv4Interface, IPv6Address, IPv6Interface
 
 from btht.app.model.rules import Alias, NatConfig, Rule
 
-#: Derived interface role vocabulary — `SPEC.md` §4.1, recovered in `OPEN-QUESTIONS.md` Q8.
-#: Configurable, not hardcoded: an unknown token becomes `other:<descr>` and surfaces
-#: in triage rather than being guessed.
-ROLE_VOCABULARY: tuple[str, ...] = (
-    "wan",
-    "ws",
-    "svrs",
-    "dmz",
-    "uav",
-    "scada",
-    "power",
-    "sat",
-    "port1",
-    "port2",
-    "stbd1",
-    "stbd2",
-)
-
 
 class Platform(StrEnum):
     """Which adapter collects from this node — `MONITORING.md` §3.2."""
@@ -45,16 +34,6 @@ class Platform(StrEnum):
     PFSENSE = "pfsense"
     LINUX = "linux"
     FRR = "frr"
-
-
-class EstateSide(StrEnum):
-    """Derived from the WAN address, never from internal ranges — `SPEC.md` §4.2.
-
-    `mcu` straddles: its WAN is Host Nation, its internal segments are deployed.
-    """
-
-    DEPLOYED = "deployed"
-    HOST_NATION = "host_nation"
 
 
 class SourceOfTruth(StrEnum):
@@ -90,8 +69,11 @@ class Interface:
     """Emission target: `wan`, `lan`, `opt1`. Used for output, never for matching."""
 
     role: str
-    """Derived matching token — `SPEC.md` §4.1. `dsoc` inverts LAN, so this is the
-    only safe key for any logic that has to work across all seven enclaves."""
+    """Matching token, declared or derived at setup — `SPEC.md` §4.1.
+
+    At least one enclave in the observed estate maps `lan` to servers while the rest
+    map it to workstations (`BASELINE-ANALYSIS.md` F2), so `ifname` is never a safe
+    key for anything but emission. Use this."""
 
     descr: str = ""
     nic: str = ""
@@ -126,11 +108,17 @@ class Firewall:
     """A node the generator also holds a ruleset for."""
 
     enclave: str
-    """`do | ds | dsoc | mcu | gov | mil | bank | hndc`."""
+    """The operator's name for this enclave, from estate setup. Free-form: the tool
+    has no list of valid enclaves and must never acquire one."""
 
     fqdn: str
-    estate_side: EstateSide
     node: Node
+    side: str = ""
+    """Operator-declared grouping label, where an estate has one.
+
+    Derive it from the **WAN address**, never from internal ranges — `SPEC.md` §4.2.
+    A firewall can sit on one side while its internal segments address into another,
+    so inferring from internals gets those cases backwards."""
     config_version: str = ""
     """Must be `23.3` — `V-CONFIG-VERSION` blocks otherwise."""
 
@@ -178,6 +166,11 @@ class Estate:
     """Stored, not derived. Whether a single-digit team pads in *addresses* is
     `OPEN-QUESTIONS.md` Q3 and unresolved; deriving it here would bake in a guess."""
 
+    role_vocabulary: tuple[str, ...] = ()
+    """Interface role tokens this estate uses, declared at setup. Empty means nothing
+    has been declared yet, not "anything goes" — an interface whose role is outside
+    this set surfaces in triage rather than being guessed."""
+
     firewalls: tuple[Firewall, ...] = ()
     nodes: tuple[Node, ...] = ()
     """Every managed node, routers included. Firewalls appear here too, via
@@ -185,6 +178,10 @@ class Estate:
 
     shared_aliases: tuple[Alias, ...] = ()
     dependencies: tuple[CrossEnclaveDep, ...] = ()
+
+    def knows_role(self, role: str) -> bool:
+        """Whether a role token was declared for this estate."""
+        return role in self.role_vocabulary
 
     def firewall(self, enclave: str) -> Firewall | None:
         for fw in self.firewalls:

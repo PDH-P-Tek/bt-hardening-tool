@@ -96,9 +96,9 @@ Estate:
     dependencies: list[CrossEnclaveDep]
 
 Firewall:
-    enclave: str                  # do | ds | dsoc | mcu | gov | mil | bank | hndc
+    enclave: str                  # operator-declared at setup. No list of valid names exists
     fqdn: str
-    estate_side: str              # "deployed" | "host_nation"  — MCU straddles, see §4.2
+    side: str                     # operator-declared label, derived from the WAN address — §4.2
     config_version: str           # must be 23.3
     interfaces: list[Interface]
     hosts: list[Host]
@@ -133,18 +133,23 @@ NatConfig:
 
 ### 4.1 Interface roles
 
-Fingerprints and policy must never embed `lan` / `opt1` — `dsoc` maps `lan` to servers while every other enclave maps it to workstations. Derive a role token:
+Fingerprints and policy must never embed `lan` / `opt1`. In the observed estate one enclave maps `lan` to servers while the rest map it to workstations (`BASELINE-ANALYSIS.md` F2), so the pfSense ifname carries no reliable meaning. Roles are **declared by the operator at setup**, or derived from `descr` where a naming convention exists:
 
 ```
 if ifname == "wan":  role = "wan"
 else:
     d = descr.lower()
-    strip a leading enclave token (longest-first): bt_wan_, hn_wan_, dsoc_, do_, ds_, mcu_, gov_, mil_, bank_
+    strip a leading enclave token (longest-first) — the token list is DATA, from the
+    profile or the operator's setup, never a literal in the code
     role = remainder
     if remainder not in vocabulary: role = "other:" + d   # surfaces in triage, never guessed
 ```
 
-Vocabulary: `wan, ws, svrs, dmz, uav, scada, power, sat, port1, port2, stbd1, stbd2`. Configurable, not hardcoded.
+**The vocabulary belongs to the estate, not to the tool.** It is declared at setup and
+stored on the `Estate`. The shipped profile offers the observed set — `wan, ws, svrs, dmz,
+uav, scada, power, sat, port1, port2, stbd1, stbd2` — as a pre-ticked *suggestion* the
+operator confirms or replaces. No enclave name, role token or side label appears as a
+literal anywhere in the package.
 
 Emission always uses `ifname`; matching always uses `role`.
 
