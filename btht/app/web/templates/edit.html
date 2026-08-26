@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block nav %} / <a href="/estates/{{ slug }}">{{ slug }}</a> / <strong>edit</strong>{% endblock %}
+{% block body %}
+<h1>{{ title }}</h1>
+<p class="sub">Change what is wrong and save. Nothing else moves.</p>
+
+<div class="panel">
+<form method="post" action="{{ action }}">
+  {% for field in fields %}
+    <label for="f-{{ field.name }}">{{ field.label }}</label>
+    {% if field.options %}
+      <select id="f-{{ field.name }}" name="{{ field.name }}">
+        {% for option in field.options %}
+        <option value="{{ option }}" {% if option == field.value %}selected{% endif %}>
+          {{ option or "—" }}</option>
+        {% endfor %}
+        {% if field.value and field.value not in field.options %}
+        <option value="{{ field.value }}" selected>{{ field.value }}</option>
+        {% endif %}
+      </select>
+    {% else %}
+      <input id="f-{{ field.name }}" name="{{ field.name }}" value="{{ field.value }}">
+    {% endif %}
+    {% if field.hint %}<div class="sub" style="margin-top:3px">{{ field.hint }}</div>{% endif %}
+  {% endfor %}
+  <button type="submit">Save changes</button>
+</form>
+</div>
+
+{% if delete_action %}
+<div class="panel">
+<h2>Remove it</h2>
+<p class="sub">
+  {{ delete_warning or "Removed only if nothing else still points at it." }}
+  The tool checks first and tells you what is in the way rather than leaving you with
+  a configuration that looks complete and quietly does nothing.
+</p>
+<form method="post" action="{{ delete_action }}"
+      onsubmit="return confirm('Remove this? The check runs first, so this may be refused.')">
+  <button type="submit" class="quiet">Remove</button>
+</form>
+</div>
+{% endif %}
+{% endblock %}

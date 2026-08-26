@@ -168,8 +168,9 @@ that or nobody will use it.
 | 9.1 | ✅ **Named services.** `RDP`, not 3389. Standard ports shipped, non-standard ones first-class, confidence recorded because some ports are guesses | The operator picks a service; the traps travel with it |
 | 9.2 | ✅ **Host types.** A kind of machine and what it runs. Suggested from the hostname, never assigned | A domain controller proposes nine services including the RPC range everybody forgets |
 | 9.3 | ✅ **Host groups.** Ten Windows 10 workstations, `ws101`–`ws110`, addressed consecutively — declared once, expanded into real hosts | A host in a group is as real as one typed alone: it gets rules, scoring assertions and a node |
-| 9.4 | **Topology v2.** Enclave containers, segment boxes, host grids, routers and the lines between them. Toggles to collapse hosts to counts, filters by type, service, scored and out-of-bounds | It reads like the range diagram, and a setup error is visible in it |
+| 9.4 | **Topology v2.** Progressive disclosure: firewall icons at the top level, click one to expand its interfaces, click an interface for its hosts, or show all for a firewall. Routers and the lines between them. Filters by type, service, scored and out-of-bounds | It reads like the range diagram, and a setup error is visible in it |
 | 9.5 | **Services UI.** View what is defined, add a non-standard service, define a host type | Neither requires editing YAML |
+| 9.6 | ✅ **Edit and remove, everywhere.** Every user-declared thing — enclave, interface, host, group, service, host type, policy rule, alias — can be amended or removed after it was created | Nothing is removed while something still points at it, and the refusal names what is in the way |
 
 ---
 

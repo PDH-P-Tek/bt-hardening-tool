@@ -18,7 +18,7 @@ from fastapi import APIRouter, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
-from btht.app.data import ESTATES, ISA_CHECKS
+from btht.app.data import ESTATES, ISA_CHECKS, SERVICE_CATALOGUE
 from btht.app.generate.diff import Gate, diff_rulesets, gate_for
 from btht.app.generate.emit import checklist
 from btht.app.generate.order import GenerationRefused, generate
@@ -26,7 +26,25 @@ from btht.app.ingest.annex import looks_out_of_bounds, parse_rows, split_kinds
 from btht.app.ingest.isa import load_catalogue
 from btht.app.ingest.pfsense import ParseError, parse_string
 from btht.app.ingest.roles import derive_interfaces, derive_side
-from btht.app.model.estate import Estate, Firewall, Host, Node, Platform, SourceOfTruth
+from btht.app.model.edit import (
+    InUse,
+    remove_firewall,
+    remove_host,
+    remove_host_group,
+    remove_interface,
+    update_firewall,
+    update_host,
+    update_host_group,
+    update_interface,
+)
+from btht.app.model.estate import (
+    Estate,
+    Firewall,
+    Host,
+    Node,
+    Platform,
+    SourceOfTruth,
+)
 from btht.app.model.policy import (
     EgressPolicy,
     EstateFileError,
@@ -42,6 +60,9 @@ from btht.app.model.policy import (
     save_policy,
     side_rules_of,
     validate_policy,
+)
+from btht.app.model.services import (
+    load_catalogue as load_services,
 )
 from btht.app.validate.rules import Context, Severity, run_all
 from btht.app.web.topology import details_json, layout, render_svg
@@ -122,7 +143,11 @@ def show_estate(request: Request, slug: str) -> HTMLResponse:
         slug=path.stem,
         estate=estate,
         platforms=[p.value for p in Platform],
-        messages=request.query_params.getlist("m") and [("ok", request.query_params["m"])] or [],
+        messages=(
+            [(request.query_params.get("k", "ok"), request.query_params["m"])]
+            if request.query_params.get("m")
+            else []
+        ),
     )
 
 
@@ -624,3 +649,375 @@ def monitor_dashboard(request: Request, slug: str) -> HTMLResponse:
         polled=bool(status),
         worklist=worklist,
     )
+
+
+# ===========================================================================
+#  Editing what has already been declared — Phase 9.6
+# ===========================================================================
+#
+# Every add form has a matching edit and delete. The tool is used the night before a
+# range opens, and an add-only interface means a typo is fixed by hand-editing YAML
+# under time pressure — which is how the second mistake gets made.
+
+
+def _rendered_estate(request: Request, path: Path, messages: list[tuple[str, str]]) -> HTMLResponse:
+    """Fall back to the estate page when the thing being edited is not there."""
+    return render(
+        request,
+        "estate.html",
+        slug=path.stem,
+        estate=load_estate(path),
+        platforms=[p.value for p in Platform],
+        messages=messages,
+    )
+
+
+def _ports_from(text: str) -> tuple[int, ...]:
+    return tuple(int(p) for p in _split(text) if p.isdigit())
+
+
+def _save(estate: Estate, path: Path) -> None:
+    save_estate(estate, path, convention_of(path).enclave_tokens, side_rules_of(path))
+
+
+def _back(slug: str, message: str = "", kind: str = "ok") -> RedirectResponse:
+    suffix = f"?m={message}&k={kind}" if message else ""
+    return RedirectResponse(f"/estates/{slug}{suffix}", status_code=303)
+
+
+@router.get("/estates/{slug}/edit/interface/{enclave}/{ifname}", response_class=HTMLResponse)
+def edit_interface_form(request: Request, slug: str, enclave: str, ifname: str) -> HTMLResponse:
+    path = estate_path(slug)
+    estate = load_estate(path)
+    firewall = estate.firewall(enclave)
+    interface = (
+        next((i for i in firewall.interfaces if i.ifname == ifname), None) if firewall else None
+    )
+    if interface is None:
+        return _rendered_estate(request, path, [("err", f"no interface {ifname}")])
+    return render(
+        request,
+        "edit.html",
+        slug=path.stem,
+        title=f"{enclave} · interface {ifname}",
+        action=f"/estates/{slug}/edit/interface/{enclave}/{ifname}",
+        delete_action=f"/estates/{slug}/delete/interface/{enclave}/{ifname}",
+        delete_warning="Refused while hosts still sit on this segment.",
+        fields=[
+            {
+                "name": "ifname",
+                "label": "ifname (what pfSense calls it)",
+                "value": interface.ifname,
+            },
+            {"name": "role", "label": "segment role (what you call it)", "value": interface.role},
+            {"name": "v4", "label": "IPv4 with prefix", "value": str(interface.v4 or "")},
+            {"name": "v6", "label": "IPv6 with prefix", "value": str(interface.v6 or "")},
+            {"name": "descr", "label": "description", "value": interface.descr},
+        ],
+    )
+
+
+@router.post("/estates/{slug}/edit/interface/{enclave}/{ifname}")
+def edit_interface(
+    slug: str,
+    enclave: str,
+    ifname: str,
+    new_ifname: str = Form("", alias="ifname"),
+    role: str = Form(""),
+    v4: str = Form(""),
+    v6: str = Form(""),
+    descr: str = Form(""),
+) -> RedirectResponse:
+    path = estate_path(slug)
+    renamed = new_ifname.strip() or ifname
+    changes: dict[str, object] = {
+        "role": role.strip(),
+        "v4": parse_address(v4),
+        "v6": parse_address(v6),
+        "descr": descr.strip(),
+        "is_lan": renamed == "lan",
+    }
+    if renamed != ifname:
+        changes["ifname"] = renamed
+    estate = update_interface(load_estate(path), enclave, ifname, **changes)
+    _save(estate, path)
+    return _back(slug, f"interface {ifname} updated")
+
+
+@router.post("/estates/{slug}/delete/interface/{enclave}/{ifname}")
+def delete_interface(slug: str, enclave: str, ifname: str) -> RedirectResponse:
+    path = estate_path(slug)
+    try:
+        _save(remove_interface(load_estate(path), enclave, ifname), path)
+    except InUse as exc:
+        return _back(slug, str(exc), "err")
+    return _back(slug, f"interface {ifname} removed")
+
+
+@router.get("/estates/{slug}/edit/host/{enclave}/{hostname}", response_class=HTMLResponse)
+def edit_host_form(request: Request, slug: str, enclave: str, hostname: str) -> HTMLResponse:
+    path = estate_path(slug)
+    estate = load_estate(path)
+    firewall = estate.firewall(enclave)
+    host = next((h for h in firewall.hosts if h.hostname == hostname), None) if firewall else None
+    if host is None:
+        return _rendered_estate(request, path, [("err", f"no host {hostname}")])
+    catalogue = load_services(SERVICE_CATALOGUE)
+    return render(
+        request,
+        "edit.html",
+        slug=path.stem,
+        title=f"{enclave} · host {hostname}",
+        action=f"/estates/{slug}/edit/host/{enclave}/{hostname}",
+        delete_action=f"/estates/{slug}/delete/host/{enclave}/{hostname}",
+        fields=[
+            {"name": "hostname", "label": "hostname", "value": host.hostname},
+            {"name": "os", "label": "operating system", "value": host.os},
+            {"name": "v4", "label": "IPv4", "value": str(host.v4 or "")},
+            {"name": "v6", "label": "IPv6", "value": str(host.v6 or "")},
+            {"name": "segment_role", "label": "segment", "value": host.segment_role},
+            {
+                "name": "service_role",
+                "label": "host type",
+                "value": host.service_role,
+                "options": sorted(catalogue.host_types),
+            },
+            {
+                "name": "services",
+                "label": "services it runs, comma separated",
+                "value": ", ".join(host.services),
+                "hint": "known: " + ", ".join(sorted(catalogue.services)[:12]) + "…",
+            },
+            {
+                "name": "out_of_bounds",
+                "label": "out of bounds",
+                "value": "yes" if host.out_of_bounds else "",
+                "options": ["", "yes"],
+                "hint": "Out-of-bounds hosts must keep working and are never policy targets.",
+            },
+        ],
+    )
+
+
+@router.post("/estates/{slug}/edit/host/{enclave}/{hostname}")
+def edit_host(
+    slug: str,
+    enclave: str,
+    hostname: str,
+    new_hostname: str = Form("", alias="hostname"),
+    os: str = Form(""),
+    v4: str = Form(""),
+    v6: str = Form(""),
+    segment_role: str = Form(""),
+    service_role: str = Form(""),
+    services: str = Form(""),
+    out_of_bounds: str = Form(""),
+) -> RedirectResponse:
+    path = estate_path(slug)
+    renamed = new_hostname.strip() or hostname
+    changes: dict[str, object] = {
+        "os": os.strip(),
+        "v4": parse_address(v4),
+        "v6": parse_address(v6),
+        "segment_role": segment_role.strip(),
+        "service_role": service_role.strip(),
+        "services": _split(services),
+        "out_of_bounds": out_of_bounds == "yes",
+    }
+    if renamed != hostname:
+        changes["hostname"] = renamed
+    estate = update_host(load_estate(path), enclave, hostname, **changes)
+    _save(estate, path)
+    return _back(slug, f"host {hostname} updated")
+
+
+@router.post("/estates/{slug}/delete/host/{enclave}/{hostname}")
+def delete_host(slug: str, enclave: str, hostname: str) -> RedirectResponse:
+    path = estate_path(slug)
+    _save(remove_host(load_estate(path), enclave, hostname), path)
+    return _back(slug, f"host {hostname} removed")
+
+
+@router.get("/estates/{slug}/edit/group/{enclave}/{prefix}", response_class=HTMLResponse)
+def edit_group_form(request: Request, slug: str, enclave: str, prefix: str) -> HTMLResponse:
+    path = estate_path(slug)
+    estate = load_estate(path)
+    firewall = estate.firewall(enclave)
+    group = (
+        next((g for g in firewall.host_groups if g.name_prefix == prefix), None)
+        if firewall
+        else None
+    )
+    if group is None:
+        return _rendered_estate(request, path, [("err", f"no group {prefix}")])
+    catalogue = load_services(SERVICE_CATALOGUE)
+    return render(
+        request,
+        "edit.html",
+        slug=path.stem,
+        title=f"{enclave} · group {prefix} ({group.count} hosts)",
+        action=f"/estates/{slug}/edit/group/{enclave}/{prefix}",
+        delete_action=f"/estates/{slug}/delete/group/{enclave}/{prefix}",
+        delete_warning=f"This removes all {group.count} machines in the group.",
+        fields=[
+            {"name": "name_prefix", "label": "name prefix", "value": group.name_prefix},
+            {"name": "count", "label": "how many", "value": str(group.count)},
+            {"name": "first_index", "label": "first number", "value": str(group.first_index)},
+            {
+                "name": "index_width",
+                "label": "digits in the number",
+                "value": str(group.index_width),
+            },
+            {"name": "os", "label": "operating system", "value": group.os},
+            {
+                "name": "host_type",
+                "label": "host type",
+                "value": group.host_type,
+                "options": sorted(catalogue.host_types),
+            },
+            {"name": "segment_role", "label": "segment", "value": group.segment_role},
+            {"name": "v4_start", "label": "first IPv4", "value": str(group.v4_start or "")},
+            {"name": "v6_start", "label": "first IPv6", "value": str(group.v6_start or "")},
+            {
+                "name": "services",
+                "label": "services (blank uses the host type's)",
+                "value": ", ".join(group.services),
+            },
+        ],
+    )
+
+
+@router.post("/estates/{slug}/edit/group/{enclave}/{prefix}")
+def edit_group(
+    slug: str,
+    enclave: str,
+    prefix: str,
+    name_prefix: str = Form(""),
+    count: int = Form(1),
+    first_index: int = Form(1),
+    index_width: int = Form(2),
+    os: str = Form(""),
+    host_type: str = Form(""),
+    segment_role: str = Form(""),
+    v4_start: str = Form(""),
+    v6_start: str = Form(""),
+    services: str = Form(""),
+) -> RedirectResponse:
+    path = estate_path(slug)
+    try:
+        estate = update_host_group(
+            load_estate(path),
+            enclave,
+            prefix,
+            name_prefix=name_prefix.strip() or prefix,
+            count=count,
+            first_index=first_index,
+            index_width=index_width,
+            os=os.strip(),
+            host_type=host_type.strip(),
+            segment_role=segment_role.strip(),
+            v4_start=parse_address(v4_start),
+            v6_start=parse_address(v6_start),
+            services=_split(services),
+        )
+    except ValueError as exc:
+        return _back(slug, str(exc), "err")
+    _save(estate, path)
+    return _back(slug, f"group {prefix} updated")
+
+
+@router.post("/estates/{slug}/delete/group/{enclave}/{prefix}")
+def delete_group(slug: str, enclave: str, prefix: str) -> RedirectResponse:
+    path = estate_path(slug)
+    _save(remove_host_group(load_estate(path), enclave, prefix), path)
+    return _back(slug, f"group {prefix} and its machines removed")
+
+
+@router.get("/estates/{slug}/edit/enclave/{enclave}", response_class=HTMLResponse)
+def edit_enclave_form(request: Request, slug: str, enclave: str) -> HTMLResponse:
+    path = estate_path(slug)
+    firewall = load_estate(path).firewall(enclave)
+    if firewall is None:
+        return _rendered_estate(request, path, [("err", f"no enclave {enclave}")])
+    return render(
+        request,
+        "edit.html",
+        slug=path.stem,
+        title=f"enclave {enclave}",
+        action=f"/estates/{slug}/edit/enclave/{enclave}",
+        delete_action=f"/estates/{slug}/delete/enclave/{enclave}",
+        delete_warning="Refused while a declared path still names this enclave.",
+        fields=[
+            {"name": "enclave", "label": "enclave name", "value": firewall.enclave},
+            {"name": "fqdn", "label": "firewall FQDN", "value": firewall.fqdn},
+            {"name": "side", "label": "side label", "value": firewall.side},
+            {
+                "name": "mgmt_address",
+                "label": "management address",
+                "value": str(firewall.node.mgmt_address),
+            },
+            {
+                "name": "gui_url",
+                "label": "management GUI URL",
+                "value": firewall.node.gui_url,
+                "hint": "Blank means no GUI link is offered. A link that does not answer is "
+                "worse than none.",
+            },
+            {"name": "ssh_user", "label": "your SSH username", "value": firewall.node.ssh_user},
+            {
+                "name": "credential_ref",
+                "label": "credential name (never the credential)",
+                "value": firewall.node.credential_ref,
+            },
+        ],
+    )
+
+
+@router.post("/estates/{slug}/edit/enclave/{enclave}")
+def edit_enclave(
+    slug: str,
+    enclave: str,
+    new_enclave: str = Form("", alias="enclave"),
+    fqdn: str = Form(""),
+    side: str = Form(""),
+    mgmt_address: str = Form(""),
+    gui_url: str = Form(""),
+    ssh_user: str = Form(""),
+    credential_ref: str = Form(""),
+) -> RedirectResponse:
+    from dataclasses import replace as dc_replace
+
+    path = estate_path(slug)
+    estate = load_estate(path)
+    firewall = estate.firewall(enclave)
+    if firewall is None:
+        return _back(slug, f"no enclave {enclave}", "err")
+    node = dc_replace(
+        firewall.node,
+        mgmt_address=parse_address(mgmt_address) or firewall.node.mgmt_address,
+        gui_url=gui_url.strip(),
+        ssh_user=ssh_user.strip(),
+        credential_ref=credential_ref.strip(),
+        enclave=new_enclave.strip() or enclave,
+    )
+    changes: dict[str, object] = {
+        "fqdn": fqdn.strip(),
+        "side": side.strip(),
+        "node": node,
+    }
+    renamed = new_enclave.strip()
+    if renamed and renamed != enclave:
+        changes["enclave"] = renamed
+    estate = update_firewall(estate, enclave, **changes)
+    _save(estate, path)
+    return _back(slug, f"enclave {enclave} updated")
+
+
+@router.post("/estates/{slug}/delete/enclave/{enclave}")
+def delete_enclave(slug: str, enclave: str) -> RedirectResponse:
+    path = estate_path(slug)
+    try:
+        _save(remove_firewall(load_estate(path), enclave, load_policy(path)), path)
+    except InUse as exc:
+        return _back(slug, str(exc), "err")
+    return _back(slug, f"enclave {enclave} removed")

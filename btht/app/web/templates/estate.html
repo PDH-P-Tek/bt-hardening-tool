@@ -15,7 +15,10 @@ an interface the tool cannot place is shown to you instead.</p>
 
 {% for firewall in estate.firewalls %}
 <div class="panel">
-<h2>{{ firewall.enclave }} <a href="/estates/{{ slug }}/policy/{{ firewall.enclave }}"
+<h2>{{ firewall.enclave }}
+  <a href="/estates/{{ slug }}/edit/enclave/{{ firewall.enclave }}"
+     style="font-size:12px;font-weight:400">edit</a>
+  <a href="/estates/{{ slug }}/policy/{{ firewall.enclave }}"
   style="font-size:12px;font-weight:400">declare its policy →</a>
   <a href="/estates/{{ slug }}/enclaves/{{ firewall.enclave }}/paste"
   style="font-size:12px;font-weight:400">paste the annex →</a>
@@ -38,13 +41,43 @@ an interface the tool cannot place is shown to you instead.</p>
         {% else %}<span class="tag">{{ i.role }}</span>{% endif %}</td>
     <td><code>{{ i.v4 or "" }}{% if i.v6 %}<br>{{ i.v6 }}{% endif %}</code></td>
     <td>{{ i.descr }}</td>
-    <td>{% if i.is_lan %}<span class="tag warn">anti-lockout binds here</span>{% endif %}</td>
+    <td>{% if i.is_lan %}<span class="tag warn">anti-lockout binds here</span>{% endif %}
+        <a href="/estates/{{ slug }}/edit/interface/{{ firewall.enclave }}/{{ i.ifname }}">edit</a></td>
   </tr>
   {% endfor %}
 </table>
 {% else %}
 <div class="note warn">No interfaces declared. Type them in below, or import a
 configuration to fill them in for confirmation.</div>
+{% endif %}
+
+{% if firewall.hosts or firewall.host_groups %}
+<h2>Hosts</h2>
+<table>
+  <tr><th>name</th><th>OS</th><th>address</th><th>segment</th><th>type</th><th>services</th><th></th></tr>
+  {% for g in firewall.host_groups %}
+  <tr>
+    <td><strong>{{ g.name_prefix }}</strong> <span class="tag">{{ g.count }} hosts</span></td>
+    <td>{{ g.os }}</td>
+    <td><code>{{ g.v4_start or "" }}{% if g.count > 1 %} +{{ g.count - 1 }}{% endif %}</code></td>
+    <td>{{ g.segment_role }}</td>
+    <td>{{ g.host_type }}</td>
+    <td>{{ g.services|join(", ") }}</td>
+    <td><a href="/estates/{{ slug }}/edit/group/{{ firewall.enclave }}/{{ g.name_prefix }}">edit</a></td>
+  </tr>
+  {% endfor %}
+  {% for h in firewall.hosts %}
+  <tr>
+    <td>{{ h.hostname }}{% if h.out_of_bounds %} <span class="tag warn">out of bounds</span>{% endif %}</td>
+    <td>{{ h.os }}</td>
+    <td><code>{{ h.v4 or "" }}</code></td>
+    <td>{{ h.segment_role }}</td>
+    <td>{{ h.service_role }}</td>
+    <td>{{ h.services|join(", ") }}</td>
+    <td><a href="/estates/{{ slug }}/edit/host/{{ firewall.enclave }}/{{ h.hostname }}">edit</a></td>
+  </tr>
+  {% endfor %}
+</table>
 {% endif %}
 
 <div class="row">

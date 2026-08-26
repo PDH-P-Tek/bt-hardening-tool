@@ -166,3 +166,111 @@ def test_the_page_loads_no_external_assets(client: TestClient) -> None:
     body = client.get("/").text
     for marker in ("http://", "https://", "cdn.", "<script src"):
         assert marker not in body
+
+
+# --- editing, Phase 9.6 -----------------------------------------------------
+
+
+def with_an_enclave(client: TestClient) -> str:
+    slug = make_estate(client)
+    client.post(
+        f"/estates/{slug}/enclaves",
+        data={"name": "alpha", "platform": "pfsense", "mgmt_address": "10.0.0.1"},
+        follow_redirects=False,
+    )
+    client.post(
+        f"/estates/{slug}/enclaves/alpha/interfaces",
+        data={"ifname": "opt1", "role": "svrs", "v4": "192.0.2.1/24", "descr": "typo here"},
+        follow_redirects=False,
+    )
+    return slug
+
+
+def test_a_mistyped_interface_can_be_corrected_in_the_ui(
+    client: TestClient, tmp_path: Path
+) -> None:
+    """The reason this exists: a typo the night before should not mean editing YAML."""
+    slug = with_an_enclave(client)
+    form = client.get(f"/estates/{slug}/edit/interface/alpha/opt1")
+    assert form.status_code == 200
+    assert "192.0.2.1/24" in form.text, "the form is pre-filled with what is there now"
+
+    response = client.post(
+        f"/estates/{slug}/edit/interface/alpha/opt1",
+        data={
+            "ifname": "opt1",
+            "role": "servers",
+            "v4": "192.0.9.1/24",
+            "v6": "",
+            "descr": "fixed",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    estate = load_estate(tmp_path / "estates" / f"{slug}.yaml")
+    interface = estate.firewalls[0].interfaces[0]
+    assert interface.role == "servers"
+    assert str(interface.v4) == "192.0.9.1/24"
+
+
+def test_an_interface_with_hosts_on_it_is_refused_and_says_why(
+    client: TestClient, tmp_path: Path
+) -> None:
+    """Refused in the UI, not just in the model — with the hosts named."""
+    slug = with_an_enclave(client)
+    client.post(
+        f"/estates/{slug}/enclaves/alpha/paste/confirm",
+        data={"text": "dc01\t192.0.2.5\tDomain controller\n", "keep": ["0"]},
+        follow_redirects=False,
+    )
+    client.post(
+        f"/estates/{slug}/edit/host/alpha/dc01",
+        data={"hostname": "dc01", "segment_role": "svrs", "v4": "192.0.2.5"},
+        follow_redirects=False,
+    )
+    response = client.post(
+        f"/estates/{slug}/delete/interface/alpha/opt1", follow_redirects=False
+    )
+    assert response.status_code == 303
+    assert "dc01" in response.headers["location"], "the refusal names what is in the way"
+
+    estate = load_estate(tmp_path / "estates" / f"{slug}.yaml")
+    assert estate.firewalls[0].interfaces, "nothing was removed"
+
+
+def test_an_empty_interface_is_removed(client: TestClient, tmp_path: Path) -> None:
+    slug = with_an_enclave(client)
+    client.post(f"/estates/{slug}/delete/interface/alpha/opt1", follow_redirects=False)
+    estate = load_estate(tmp_path / "estates" / f"{slug}.yaml")
+    assert estate.firewalls[0].interfaces == ()
+
+
+def test_an_enclave_can_be_amended_including_how_to_reach_it(
+    client: TestClient, tmp_path: Path
+) -> None:
+    slug = with_an_enclave(client)
+    client.post(
+        f"/estates/{slug}/edit/enclave/alpha",
+        data={
+            "enclave": "alpha",
+            "fqdn": "fw1.alpha.example",
+            "side": "north",
+            "mgmt_address": "10.0.0.9",
+            "gui_url": "https://10.0.0.9/",
+            "ssh_user": "analyst",
+            "credential_ref": "monitor-key",
+        },
+        follow_redirects=False,
+    )
+    firewall = load_estate(tmp_path / "estates" / f"{slug}.yaml").firewalls[0]
+    assert firewall.fqdn == "fw1.alpha.example"
+    assert str(firewall.node.mgmt_address) == "10.0.0.9"
+    assert firewall.node.ssh_user == "analyst"
+
+
+def test_edit_links_are_reachable_from_the_estate_page(client: TestClient) -> None:
+    """An edit function nobody can find is not an edit function."""
+    slug = with_an_enclave(client)
+    body = client.get(f"/estates/{slug}").text
+    assert f"/estates/{slug}/edit/enclave/alpha" in body
+    assert f"/estates/{slug}/edit/interface/alpha/opt1" in body
