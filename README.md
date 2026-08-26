@@ -36,14 +36,17 @@ Three inputs, each of which moved something significant:
 |---|---|---|
 | 1 | `CLAUDE.md` | Agent brief. Start here to build it. |
 | 2 | `SPEC.md` | The authority on behaviour. |
-| 3 | `WORKFLOW.md` | What the operator does, step by step, with timings. |
-| 4 | `BASELINE-ANALYSIS.md` | What Green Team ships. Findings F1–F12. |
-| 5 | `EVIDENCE.md` | What teams did with it. Findings E1–E10, and the validator test set. |
-| 6 | `VERIFICATION.md` | Proving the ruleset does what the policy said. |
-| 7 | `isa-checks.yaml` | ISA check → port mapping and scoring topology. |
-| 8 | `service-catalogue.yaml`, `seed-profile.yaml`, `templates/` | Shipped data. |
-| 9 | `wireframes/` | Open in a browser. |
-| 10 | `OPEN-QUESTIONS.md` | What we don't know. Two still blocking. |
+| 3 | `BUILD-PLAN.md` | The merged build sequence. What to do first. |
+| 4 | `WORKFLOW.md` | What the operator does, step by step, with timings. |
+| 5 | `BASELINE-ANALYSIS.md` | What Green Team ships. Findings F1–F12. |
+| 6 | `EVIDENCE.md` | What teams did with it. Findings E1–E10, and the validator test set. |
+| 7 | `VERIFICATION.md` | Proving the ruleset does what the policy said. |
+| 8 | `MONITORING.md` | Estate change detection — collection matrix, adapters, triage model. |
+| 9 | `HARDENING.md` | Posture checks `H-*`, and the day-one ordering that avoids lockout. |
+| 10 | `isa-checks.yaml` | ISA check → port mapping and scoring topology. |
+| 11 | `service-catalogue.yaml`, `seed-profile.yaml`, `templates/` | Shipped data. |
+| 12 | `wireframes/` | Open in a browser. |
+| 13 | `OPEN-QUESTIONS.md` | What we don't know. Two still blocking. |
 
 ## Decisions
 
@@ -73,6 +76,6 @@ Neither stops the build starting.
 
 ## Next step
 
-Create a Git repository from this folder and hand `CLAUDE.md` to a Claude Code agent. The build order in `SPEC.md` §11 is sequenced so each milestone is independently useful — the tool is worth having from step 7, before validators and XML export exist.
+Hand `CLAUDE.md` to a Claude Code agent and start at Phase 0 of `BUILD-PLAN.md`. Each phase is independently useful — the generator is worth having at the end of Phase 3, before validators and XML export exist.
 
 **Do not commit real range configuration.** Fixtures are hand-built and sanitised; the analysis documents and shipped data files contain everything needed to construct them.
