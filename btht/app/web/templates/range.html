@@ -101,7 +101,7 @@ routers they peer with.</div>
 <h2>{{ firewall.display_name or firewall.enclave }} — interfaces
   {{ form.opener("edit-enclave", "Edit enclave") }}
   <a class="btn small quiet" href="/range/policy/{{ firewall.enclave }}">Declare policy</a>
-  <a class="btn small quiet" href="/range/review/{{ firewall.enclave }}">Review and export</a>
+  <a class="btn small quiet" href="/rules/{{ firewall.enclave }}">Review and export</a>
 </h2>
 <div class="tiles">
   {% for i in firewall.interfaces %}

@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% set page = "rules" %}
+{% block body %}
+<h1>Rules</h1>
+<p class="sub">Say what each enclave must permit, read what that generates, and agree it
+is right before anything is typed into a firewall.</p>
+
+{% if not estate.firewalls %}
+<div class="note warn">No enclaves yet. Add them on <a href="/range">Range</a> first —
+rules are generated from what is actually declared on each segment.</div>
+{% endif %}
+
+<div class="tiles">
+{% for card in cards %}
+  <div class="tile">
+    <h3>{{ card.display_name }}</h3>
+    <p><code>{{ card.enclave }}</code></p>
+
+    {% if card.refused %}
+      <div class="note err" style="margin:12px 0 0">
+        <strong>Refused to generate.</strong> {{ card.refused }}</div>
+      <p style="margin-top:12px">
+        <a class="btn" href="/range/policy/{{ card.enclave }}">Fix the policy</a></p>
+
+    {% elif not card.has_policy %}
+      <div class="note warn" style="margin:12px 0 0">No policy declared yet.</div>
+      <p style="margin-top:12px">
+        <a class="btn" href="/range/policy/{{ card.enclave }}">Declare policy</a></p>
+
+    {% else %}
+      <table style="margin-top:10px">
+        <tr><th>rules generated</th><td class="mono">{{ card.rules }}</td></tr>
+        <tr><th>services permitted</th><td class="mono">{{ card.services }}</td></tr>
+        <tr><th>blocking</th>
+          <td class="mono">{% if card.blocking %}<span class="tag warn">{{ card.blocking }}</span>
+            {% else %}none{% endif %}</td></tr>
+        <tr><th>to acknowledge</th>
+          <td class="mono">{% if card.outstanding %}<span class="tag warn">{{ card.outstanding }}</span>
+            {% else %}none{% endif %}</td></tr>
+      </table>
+      <p style="margin-top:12px">
+        <a class="btn" href="/rules/{{ card.enclave }}">
+          {% if card.signed_off %}Read again{% else %}Read the rules{% endif %}</a>
+        <a class="btn quiet" href="/range/policy/{{ card.enclave }}">Change policy</a>
+      </p>
+      {% if card.signed_off %}
+        <p class="sub" style="margin:8px 0 0">✓ signed off</p>
+      {% endif %}
+    {% endif %}
+  </div>
+{% endfor %}
+</div>
+{% endblock %}

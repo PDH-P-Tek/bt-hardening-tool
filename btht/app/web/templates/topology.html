@@ -6,11 +6,16 @@
 on it. To change anything, go to <a href="/range">Range</a>.</p>
 
 <style>
-.topology{display:flex;gap:18px;align-items:flex-start;flex-wrap:wrap}
-.canvas{flex:2;min-width:340px;background:var(--panel);border:1px solid var(--line);
-  border-radius:8px;padding:6px;overflow-x:auto}
-.pane{flex:1;min-width:250px;background:var(--panel);border:1px solid var(--line);
+.topology{display:flex;gap:18px;align-items:flex-start}
+/* The diagram is a wall poster. It is never scaled down to fit the column — it keeps
+   its natural size and the column scrolls, because a legible picture you scroll beats
+   a complete picture you cannot read. */
+.canvas{flex:1 1 auto;min-width:0;background:var(--panel);border:1px solid var(--line);
+  border-radius:8px;padding:10px;overflow:auto;max-height:78vh}
+.canvas svg{display:block}
+.pane{flex:0 0 290px;background:var(--panel);border:1px solid var(--line);
   border-radius:8px;padding:16px 18px;position:sticky;top:12px}
+@media (max-width:900px){.topology{flex-wrap:wrap}.pane{flex:1 1 100%;position:static}}
 svg a{cursor:pointer}
 svg .shape rect{fill:var(--bg);stroke:var(--line);stroke-width:1.5px}
 svg a:hover .shape rect{stroke:var(--accent);stroke-width:2px}
@@ -22,9 +27,9 @@ svg .accent-ok rect{stroke:var(--ok)}
 svg .accent-accent rect{stroke:var(--accent)}
 svg .link{stroke:var(--line);stroke-width:1.5px}
 svg text{font-family:var(--mono);pointer-events:none}
-svg .label{font-size:12.5px;fill:var(--ink)}
-svg .sub{font-size:10px;fill:var(--muted)}
-svg .badge{font-size:9.5px;fill:var(--muted)}
+svg .label{font-size:14px;fill:var(--ink)}
+svg .sub{font-size:11.5px;fill:var(--muted)}
+svg .badge{font-size:11px;fill:var(--muted)}
 .pane dl{margin:0;font-size:13px}
 .pane dt{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.04em;margin-top:9px}
 .pane dd{margin:1px 0 0;font-family:var(--mono);font-size:12.5px;word-break:break-all}

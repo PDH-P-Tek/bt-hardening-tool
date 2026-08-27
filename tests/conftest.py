@@ -7,6 +7,13 @@ run independently of each other.
 
 from __future__ import annotations
 
+import os
+
+# The collector runs in-process with the app. The suite is offline by construction, so
+# it is switched off here rather than relied upon to fail politely — a test that shells
+# out to `ssh` does not fail, it hangs.
+os.environ.setdefault("BTHT_MONITOR", "0")
+
 from ipaddress import IPv4Address, IPv4Interface, IPv6Address, IPv6Interface
 from pathlib import Path
 

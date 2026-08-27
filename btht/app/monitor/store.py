@@ -48,7 +48,30 @@ CREATE TABLE IF NOT EXISTS heartbeats (
     reachable INTEGER NOT NULL DEFAULT 1,
     error TEXT NOT NULL DEFAULT ''
 );
+CREATE TABLE IF NOT EXISTS snapshots (
+    host TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    key TEXT NOT NULL,
+    collector TEXT NOT NULL DEFAULT '',
+    label TEXT NOT NULL DEFAULT '',
+    value TEXT,
+    taken_at TEXT NOT NULL,
+    PRIMARY KEY (host, kind, key)
+);
 """
+
+
+class BaselineKind(StrEnum):
+    """`MONITORING.md` S7 — two baselines, and the first one is the one people skip.
+
+    **As received** is what Green Team shipped, before anyone touched it. Taking only
+    the hardened baseline throws it away permanently, and with it the ability to answer
+    "was that us, or was it always like that?" — which is the question that comes up
+    every time something breaks.
+    """
+
+    AS_RECEIVED = "as_received"
+    HARDENED = "hardened"
 
 
 class ChangeKind(StrEnum):
@@ -122,9 +145,33 @@ class Store:
         )
         self.connection.commit()
 
-    def adopt_baseline(self, collection: Collection) -> None:
-        """Take the first collection as known-good. `MONITORING.md` S7."""
+    def adopt_baseline(
+        self, collection: Collection, kind: BaselineKind = BaselineKind.AS_RECEIVED
+    ) -> None:
+        """Take a collection as known-good, and keep a copy of it under `kind`.
+
+        The live `items.baseline_value` is what the diff compares against and moves as
+        changes are accepted. The snapshot does not move — it is the record of what the
+        box looked like at that moment, and it is the only way to answer later whether
+        something was Green Team's or ours.
+        """
         now = _now()
+        for item in collection.items:
+            self.connection.execute(
+                "INSERT INTO snapshots (host, kind, key, collector, label, value, taken_at) "
+                "VALUES (?,?,?,?,?,?,?) "
+                "ON CONFLICT(host, kind, key) DO UPDATE SET value=excluded.value, "
+                "taken_at=excluded.taken_at",
+                (
+                    collection.host,
+                    kind.value,
+                    item.key,
+                    item.collector,
+                    item.label,
+                    item.value,
+                    now,
+                ),
+            )
         for item in collection.items:
             self.connection.execute(
                 "INSERT INTO items (host, key, collector, kind, label, severity, "
@@ -299,5 +346,108 @@ class Store:
             self.connection.execute(
                 "SELECT * FROM items WHERE review_state = ? ORDER BY host, key",
                 (ReviewState.FLAGGED.value,),
+            )
+        )
+
+    # --- what the dashboard reads — `MONITORING.md` §8.2 -------------------
+
+    #: An item is *outstanding* when it has drifted from its baseline and nobody has
+    #: decided about it yet. Accepting moves the baseline, so an accepted item leaves
+    #: this set on its own — there is no separate "cleared" flag to get out of step.
+    _OUTSTANDING = (
+        "review_state = 'unreviewed' AND kind = 'config' "
+        "AND IFNULL(baseline_value, '') != IFNULL(current_value, '')"
+    )
+
+    #: Worst first, always. Ordering by time buries a critical under a morning of noise.
+    _BY_SEVERITY = (
+        "CASE severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 "
+        "WHEN 'low' THEN 3 ELSE 4 END"
+    )
+
+    def outstanding(self, host: str = "") -> list[sqlite3.Row]:
+        """Everything still awaiting a decision, worst first."""
+        where = self._OUTSTANDING + (" AND host = ?" if host else "")
+        return list(
+            self.connection.execute(
+                f"SELECT * FROM items WHERE {where} "
+                f"ORDER BY {self._BY_SEVERITY}, last_changed DESC",
+                (host,) if host else (),
+            )
+        )
+
+    def unreviewed_count(self) -> int:
+        """The number that dominates the dashboard. Zero means stop looking."""
+        row = self.connection.execute(
+            f"SELECT COUNT(*) AS n FROM items WHERE {self._OUTSTANDING}"
+        ).fetchone()
+        return int(row["n"])
+
+    def host_summary(self) -> list[sqlite3.Row]:
+        """One row per host: what is outstanding on it and how bad the worst of it is.
+
+        This is the estate view. A tile per host, coloured by its worst unreviewed
+        finding — not by how many, because ten low-severity account changes must never
+        outrank one modified firewall rule.
+        """
+        return list(
+            self.connection.execute(
+                "SELECT h.host AS host, h.last_seen AS last_seen, h.reachable AS reachable, "
+                "h.error AS error, "
+                f"(SELECT COUNT(*) FROM items i WHERE i.host = h.host AND {self._OUTSTANDING}) "
+                "AS outstanding, "
+                "(SELECT COUNT(*) FROM items i WHERE i.host = h.host "
+                "AND i.review_state = 'flagged') AS flagged, "
+                "(SELECT severity FROM items i WHERE i.host = h.host "
+                f"AND {self._OUTSTANDING} ORDER BY {self._BY_SEVERITY} LIMIT 1) AS worst "
+                "FROM heartbeats h ORDER BY h.host"
+            )
+        )
+
+    def item(self, host: str, key: str) -> sqlite3.Row | None:
+        row = self.connection.execute(
+            "SELECT * FROM items WHERE host = ? AND key = ?", (host, key)
+        ).fetchone()
+        return None if row is None else row
+
+    def snapshot_value(self, host: str, key: str, kind: BaselineKind) -> str | None:
+        """What this item held in one of the two baselines, if it was there at all."""
+        row = self.connection.execute(
+            "SELECT value FROM snapshots WHERE host = ? AND kind = ? AND key = ?",
+            (host, kind.value, key),
+        ).fetchone()
+        return None if row is None else str(row["value"])
+
+    def baselines_taken(self) -> dict[str, set[str]]:
+        """Which baselines exist per host, so setup can say what is still missing."""
+        taken: dict[str, set[str]] = {}
+        for row in self.connection.execute("SELECT DISTINCT host, kind FROM snapshots"):
+            taken.setdefault(str(row["host"]), set()).add(str(row["kind"]))
+        return taken
+
+    # --- "changed since I last looked" -------------------------------------
+
+    def last_look(self) -> str:
+        row = self.connection.execute("SELECT value FROM meta WHERE name = 'last_look'").fetchone()
+        return "" if row is None else str(row["value"])
+
+    def mark_looked(self) -> None:
+        """Called when the operator opens the dashboard, not on every page render."""
+        self.connection.execute(
+            "INSERT INTO meta (name, value) VALUES ('last_look', ?) "
+            "ON CONFLICT(name) DO UPDATE SET value=excluded.value",
+            (_now(),),
+        )
+        self.connection.commit()
+
+    def changed_since(self, marker: str) -> list[sqlite3.Row]:
+        """What moved since the operator last looked — the handover question."""
+        if not marker:
+            return []
+        return list(
+            self.connection.execute(
+                f"SELECT * FROM items WHERE last_changed > ? AND {self._OUTSTANDING} "
+                f"ORDER BY {self._BY_SEVERITY}, last_changed DESC",
+                (marker,),
             )
         )

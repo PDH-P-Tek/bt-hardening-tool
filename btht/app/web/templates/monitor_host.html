@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% set page = "monitor" %}
+{% block body %}
+<div class="crumb"><a href="/monitor">Monitor</a> → {{ host }}</div>
+<h1>{{ host }}</h1>
+<p class="sub">
+  {% if node %}{{ node.platform }} · <code>{{ node.mgmt_address }}</code>{% endif %}
+  {% if beat %}· last collected {{ (beat.last_seen or "never")[:19]|replace("T", " ") }} UTC{% endif %}
+</p>
+
+{% if beat and not beat.reachable %}
+<div class="note err"><strong>Not answering.</strong> {{ beat.error or "no reason given" }}
+  <br>A box that stops answering is itself worth acting on — nothing below is current.</div>
+{% endif %}
+
+<div class="panel">
+<h2 style="margin-top:0">Get onto this box</h2>
+<p class="sub" style="margin-bottom:10px">The tool does not change anything. You do,
+on the box.</p>
+{% if node %}
+<p>
+  {% if node.gui_url %}
+  <a class="btn" href="{{ node.gui_url }}" target="_blank" rel="noopener">Open the management GUI</a>
+  {% endif %}
+  <button class="btn quiet" type="button" onclick="
+    navigator.clipboard&&navigator.clipboard.writeText('ssh {{ node.ssh_user }}{% if node.ssh_user %}@{% endif %}{{ node.mgmt_address }}');
+    this.textContent='Copied';">Copy the SSH command</button>
+</p>
+{% if not node.gui_url %}
+<p class="sub">No management URL declared for this box — add one on
+  <a href="/range">Range</a> and it will appear here.</p>
+{% endif %}
+{% endif %}
+</div>
+
+<h2>Outstanding — {{ outstanding|length }}</h2>
+{% if not outstanding %}
+<div class="note ok">Nothing outstanding. Everything collected here matches its baseline.</div>
+{% else %}
+<p class="sub">Grouped by what collects them, worst first. Click one to see the change
+itself and decide.</p>
+{% for collector, rows in groups.items() %}
+<div class="panel">
+  <h3 style="margin:0 0 8px;font-size:13px"><code>{{ collector }}</code>
+    <span class="sub" style="font-weight:400">— {{ rows|length }}</span></h3>
+  <table>
+    <tr><th>what changed</th><th style="width:90px">severity</th>
+        <th style="width:170px">when</th></tr>
+    {% for row in rows %}
+    <tr>
+      <td><a href="/monitor/item/{{ host }}/{{ row.key }}">{{ row.label or row.key }}</a></td>
+      <td><span class="tag {% if row.severity in ('critical','high') %}warn{% endif %}">{{ row.severity }}</span></td>
+      <td class="mono sub">{{ row.last_changed[:19]|replace("T", " ") }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% endfor %}
+{% endif %}
+
+{% if unknown_key_sessions %}
+<div class="panel">
+<h2 style="margin-top:0">Logins with a key nobody issued — {{ unknown_key_sessions|length }}</h2>
+<p class="sub" style="margin-bottom:10px">These authenticated with a key fingerprint that
+does not appear in this box's own authorised-key inventory. That is not ambiguous.</p>
+{% for session in unknown_key_sessions %}
+<div class="note err">{{ session.describe() }}</div>
+{% endfor %}
+</div>
+{% endif %}
+
+{% if sessions %}
+<div class="panel">
+<h2 style="margin-top:0">Who has been on this box</h2>
+<p class="sub" style="margin-bottom:10px">Collected so a change can be put beside the
+session that might account for it. A session at the right moment is a lead, not proof —
+and logs on a box someone else controls are evidence they control.</p>
+<table>
+  <tr><th>account</th><th>from</th><th>started</th><th>ended</th><th>key</th></tr>
+  {% for session in sessions %}
+  <tr>
+    <td>{{ session.user }}</td>
+    <td class="mono">{{ session.source }}</td>
+    <td class="mono sub">{{ session.started[:19]|replace("T", " ") }}</td>
+    <td class="mono sub">{{ session.ended[:19]|replace("T", " ") if session.ended else "still open" }}</td>
+    <td class="mono sub">{{ session.fingerprint or "—" }}</td>
+  </tr>
+  {% endfor %}
+</table>
+</div>
+{% endif %}
+{% endblock %}

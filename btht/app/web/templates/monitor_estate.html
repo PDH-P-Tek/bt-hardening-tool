@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+{% set page = "monitor" %}
+{% block body %}
+
+<style>
+.headline{display:flex;align-items:center;gap:22px;flex-wrap:wrap;
+  background:var(--panel);border:1px solid var(--line);border-radius:8px;
+  padding:20px 24px;margin-bottom:18px}
+.headline.clear{border-color:var(--ok)}
+.headline.busy{border-color:var(--err)}
+.bignum{font-family:var(--mono);font-size:52px;line-height:1;font-weight:600}
+.headline.clear .bignum{color:var(--ok)}
+.headline.busy .bignum{color:var(--err)}
+.headline .what{flex:1 1 240px}
+.headline .what strong{display:block;font-size:15px}
+.headline .what span{color:var(--muted);font-size:13px}
+.hosttile{flex:1 1 210px;background:var(--panel);border:1px solid var(--line);
+  border-left-width:5px;border-radius:8px;padding:14px 16px;text-decoration:none;
+  color:var(--ink);display:block}
+.hosttile:hover{border-color:var(--accent)}
+.hosttile .n{font-family:var(--mono);font-size:26px;line-height:1;display:block}
+.hosttile h3{margin:6px 0 2px;font-size:14px}
+.hosttile p{margin:0;color:var(--muted);font-size:12px}
+.sev-critical{border-left-color:var(--err)} .sev-critical .n{color:var(--err)}
+.sev-high{border-left-color:var(--err)} .sev-high .n{color:var(--err)}
+.sev-medium{border-left-color:var(--warn)} .sev-medium .n{color:var(--warn)}
+.sev-low{border-left-color:var(--accent)} .sev-low .n{color:var(--accent)}
+.sev-none{border-left-color:var(--ok)} .sev-none .n{color:var(--ok)}
+.sev-down{border-left-color:var(--err);background:var(--err-soft)}
+</style>
+
+<h1>Monitor</h1>
+<p class="sub">Change across the estate, against the baseline you took. Read-only — the
+tool never reverts anything. You act on the box.</p>
+
+{% if not running %}
+<div class="note warn">Collection is not running, so nothing on this page is being
+updated. <a href="/monitor/setup">Open monitor setup</a> to sort it out.</div>
+{% endif %}
+
+<div class="headline {% if total %}busy{% else %}clear{% endif %}">
+  <div class="bignum">{{ total }}</div>
+  <div class="what">
+    <strong>{% if total %}unreviewed change{{ "s" if total != 1 }}{% else %}Nothing unreviewed{% endif %}</strong>
+    <span>{% if total %}Each one needs a person to say whether it was us.
+      {% else %}Everything collected matches its baseline. Stop looking.{% endif %}</span>
+  </div>
+  <div>
+    <a class="btn quiet" href="/monitor/handover">Handover report</a>
+    <a class="btn quiet" href="/monitor/setup">Setup</a>
+  </div>
+</div>
+
+{% if since %}
+<div class="panel">
+<h2 style="margin-top:0">Changed since you last looked</h2>
+<p class="sub" style="margin-bottom:10px">{{ since|length }} since {{ marker[:19]|replace("T", " ") }} UTC.</p>
+<table>
+  <tr><th style="width:130px">host</th><th>what</th><th style="width:90px">severity</th></tr>
+  {% for row in since %}
+  <tr>
+    <td><a href="/monitor/host/{{ row.host }}">{{ row.host }}</a></td>
+    <td><a href="/monitor/item/{{ row.host }}/{{ row.key }}">{{ row.label or row.key }}</a></td>
+    <td><span class="tag {% if row.severity in ('critical','high') %}warn{% endif %}">{{ row.severity }}</span></td>
+  </tr>
+  {% endfor %}
+</table>
+</div>
+{% endif %}
+
+<h2>Every box</h2>
+{% if not summary %}
+<div class="note warn">Nothing has been collected yet.
+  <a href="/monitor/setup">Test the connections and take a baseline</a> first.</div>
+{% endif %}
+<div class="tiles">
+{% for row in summary %}
+  {% set sev = "down" if not row.reachable else (row.worst or "none") %}
+  <a class="hosttile sev-{{ sev }}" href="/monitor/host/{{ row.host }}">
+    <span class="n">{% if not row.reachable %}!{% else %}{{ row.outstanding }}{% endif %}</span>
+    <h3>{{ row.host }}</h3>
+    <p>
+      {% if not row.reachable %}not answering — {{ row.error or "no reason given" }}
+      {% elif row.outstanding %}worst: {{ row.worst }}
+      {% else %}matches baseline{% endif %}
+      {% if row.flagged %}<br>{{ row.flagged }} flagged{% endif %}
+    </p>
+  </a>
+{% endfor %}
+</div>
+
+{% if never_polled %}
+<div class="panel">
+<h2 style="margin-top:0">Declared but never collected — {{ never_polled|length }}</h2>
+<p class="sub">A box the tool has never reached is not being watched, whatever the tiles
+above say.</p>
+<table>
+  <tr><th>name</th><th>address</th><th>platform</th></tr>
+  {% for node in never_polled %}
+  <tr><td>{{ node.name }}</td><td class="mono">{{ node.mgmt_address }}</td>
+      <td>{{ node.platform }}</td></tr>
+  {% endfor %}
+</table>
+<p><a class="btn" href="/monitor/setup">Test these connections</a></p>
+</div>
+{% endif %}
+
+{% if flagged %}
+<div class="panel">
+<h2 style="margin-top:0">Flagged — being dealt with</h2>
+<table>
+  <tr><th style="width:130px">host</th><th>what</th><th>note</th></tr>
+  {% for row in flagged %}
+  <tr><td><a href="/monitor/host/{{ row.host }}">{{ row.host }}</a></td>
+      <td><a href="/monitor/item/{{ row.host }}/{{ row.key }}">{{ row.label or row.key }}</a></td>
+      <td class="sub">{{ row.note or "—" }}</td></tr>
+  {% endfor %}
+</table>
+</div>
+{% endif %}
+{% endblock %}

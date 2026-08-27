@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% set page = "monitor" %}
+{% block body %}
+<div class="crumb"><a href="/monitor">Monitor</a> → setup</div>
+<h1>Monitor setup</h1>
+<p class="sub">Three things, in order: prove the tool can reach every box, take the
+baseline Green Team shipped, then take one after you have hardened.</p>
+
+{% if not running %}
+<div class="note warn"><strong>Collection is not running.</strong>
+The monitor authenticates with a key you generate yourself and keep outside this tool.
+Install the public half in the read-only account on each box, then start the tool with
+<code>BTHT_SSH_KEY</code> pointing at the private half and <code>BTHT_SSH_USER</code>
+set to that account. The account needs read access and nothing more — the monitor never
+writes to a managed box, and holding a credential that could would defeat the point.</div>
+{% else %}
+<div class="note ok">Collection is running.</div>
+{% endif %}
+
+<div class="panel">
+<h2 style="margin-top:0">1 · Can the tool reach every box?</h2>
+<p class="sub" style="margin-bottom:10px">Each result says what specifically failed, so
+you know whether to go and look at a key, a rule, or the box itself.</p>
+<form method="post" action="/monitor/setup/test" style="margin:0 0 14px">
+  <button class="btn" type="submit" style="margin:0">Test every connection</button>
+</form>
+{% if nodes %}
+<table>
+  <tr><th style="width:140px">box</th><th style="width:130px">address</th>
+      <th>result</th></tr>
+  {% for node in nodes %}
+  {% set probe = probes.get(node.name) %}
+  <tr>
+    <td>{{ node.name }}</td>
+    <td class="mono">{{ node.mgmt_address }}</td>
+    <td>
+      {% if not probe %}<span class="sub">not tested yet</span>
+      {% elif probe.ok %}<span class="tag">✓ {{ probe.meaning }}</span>
+      {% else %}
+        <strong>{{ probe.meaning }}</strong>
+        {% if probe.remedy %}<div class="sub">{{ probe.remedy }}</div>{% endif %}
+        {% if probe.detail %}<div class="sub mono">{{ probe.detail }}</div>{% endif %}
+      {% endif %}
+    </td>
+  </tr>
+  {% endfor %}
+</table>
+{% else %}
+<div class="note warn">No boxes declared yet. Add your enclaves and routers on
+  <a href="/range">Range</a>.</div>
+{% endif %}
+</div>
+
+<div class="panel">
+<h2 style="margin-top:0">2 · Take the baseline as received</h2>
+<p class="sub" style="margin-bottom:10px">Before you change anything. This is the only
+record of what Green Team shipped — take only the hardened one and you can never again
+answer "was that us, or was it always like that?".</p>
+<form method="post" action="/monitor/setup/baseline/as_received" style="margin:0">
+  <button class="btn" type="submit" style="margin:0">Take the as-received baseline</button>
+</form>
+</div>
+
+<div class="panel">
+<h2 style="margin-top:0">3 · Take the baseline after hardening</h2>
+<p class="sub" style="margin-bottom:10px">Once your rules are on the boxes and you are
+happy with them. From here, anything that moves is worth a look.</p>
+<form method="post" action="/monitor/setup/baseline/hardened" style="margin:0">
+  <button class="btn quiet" type="submit" style="margin:0">Take the hardened baseline</button>
+</form>
+</div>
+
+<div class="panel">
+<h2 style="margin-top:0">Where each box stands</h2>
+<table>
+  <tr><th>box</th><th style="width:140px">as received</th><th style="width:140px">hardened</th>
+      <th style="width:180px">last collected</th></tr>
+  {% for node in nodes %}
+  {% set kinds = taken.get(node.name, []) %}
+  <tr>
+    <td>{{ node.name }}</td>
+    <td>{% if "as_received" in kinds %}<span class="tag">taken</span>
+        {% else %}<span class="tag warn">not taken</span>{% endif %}</td>
+    <td>{% if "hardened" in kinds %}<span class="tag">taken</span>
+        {% else %}<span class="sub">not yet</span>{% endif %}</td>
+    <td class="mono sub">
+      {% set beat = beats.get(node.name) %}
+      {{ (beat.last_seen or "never")[:19]|replace("T", " ") if beat else "never" }}</td>
+  </tr>
+  {% endfor %}
+</table>
+</div>
+{% endblock %}

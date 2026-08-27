@@ -13,6 +13,10 @@ That falls out of diffing an item set rather than scanning for bad things.
 
 from __future__ import annotations
 
+import json
+from dataclasses import asdict
+
+from btht.app.monitor import sessions
 from btht.app.monitor.items import Collection, Item, Kind, Severity, digest, key_fingerprint
 from btht.app.monitor.transport import Transport, TransportError
 
@@ -39,6 +43,12 @@ COMMANDS = {
     "H-SSH-CONFIG": "sshd -T",
     "M-STATE-UPTIME": "uptime",
     "M-STATE-WHO": "who",
+    # Session evidence — see `monitor/sessions.py`. `-F` for full timestamps, without
+    # which a login carries no year and cannot be placed against a change.
+    "M-SESS-01": "last -F -w -n 120",
+    # `-s` so a box that keeps auth records in the other place stays quiet rather than
+    # erroring; `-h` so the filename does not prefix every line.
+    "M-SESS-02": "grep -sah 'Accepted ' /var/log/auth.log /var/log/secure",
 }
 
 
@@ -334,6 +344,27 @@ def collect(transport: Transport, secret: str = "btht") -> Collection:
             result = transport.run(COMMANDS[collector])
             if result.ok:
                 items += _units(result.stdout, collector, label, severity)
+
+        # Who has been on the box. State, emphatically: sessions churn constantly and
+        # diffing them would alarm on every legitimate login. They are collected so a
+        # change can be put beside the session that might account for it.
+        logins = transport.run(COMMANDS["M-SESS-01"])
+        accepted = transport.run(COMMANDS["M-SESS-02"])
+        merged = sessions.merge(
+            sessions.parse_last(logins.stdout) if logins.ok else (),
+            sessions.parse_accepted(accepted.stdout) if accepted.ok else (),
+        )
+        for session in merged:
+            items.append(
+                Item(
+                    key=f"session:{session.started}:{session.user}@{session.source}",
+                    collector="M-SESS-01",
+                    kind=Kind.STATE,
+                    value=json.dumps(asdict(session), sort_keys=True),
+                    severity=Severity.INFO,
+                    label=session.describe(),
+                )
+            )
 
         # State. Displayed, never diffed — see `items.Kind`.
         for collector, label in (("M-STATE-UPTIME", "uptime"), ("M-STATE-WHO", "logged in")):

@@ -352,7 +352,7 @@ def test_the_review_page_refuses_rather_than_generating_something_plausible(
 ) -> None:
     """No management alias declared: the generator refuses and the page says why."""
     _declare_a_generatable_estate(client)
-    body = client.get("/range/review/alpha").text
+    body = client.get("/rules/alpha").text
     assert "Refusing to generate" in body
     assert "locks itself out" in body
 
@@ -363,6 +363,6 @@ def test_export_is_refused_while_the_gate_is_shut(client: TestClient) -> None:
     A gate that only hides a button is not a gate — it is a suggestion.
     """
     _declare_a_generatable_estate(client)
-    response = client.post("/range/review/alpha/export", follow_redirects=False)
+    response = client.post("/rules/alpha/export", follow_redirects=False)
     assert response.status_code == 409, "a refusal must read as a refusal, not a crash"
     assert "Refusing to generate" in response.text

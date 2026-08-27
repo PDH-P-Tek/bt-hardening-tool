@@ -1,0 +1,185 @@
+{% extends "base.html" %}
+{% set page = "rules" %}
+{% block body %}
+<div class="crumb"><a href="/rules">Rules</a> → {{ enclave }}</div>
+
+{% if refused %}
+<h1>{{ enclave }} — refused to generate</h1>
+<p class="sub">Refusing to generate always beats generating something plausible.</p>
+<div class="note err"><strong>Refusing to generate.</strong> {{ refused }}</div>
+<p><a class="btn" href="/range/policy/{{ enclave }}">Fix the policy</a>
+   <a class="btn quiet" href="/rules">Back to rules</a></p>
+
+{% else %}
+<h1>{{ enclave }} — {{ rule_count }} rules</h1>
+<p class="sub">Read down the list. Every rule says in plain English what it is for.
+Order is part of the rule — the same rule in a different place is a different ruleset —
+so this is exactly the order to type them in.</p>
+
+<style>
+.gatebar{display:flex;gap:14px;align-items:center;flex-wrap:wrap;
+  background:var(--panel);border:1px solid var(--line);border-radius:8px;
+  padding:12px 16px;margin-bottom:18px;position:sticky;top:0;z-index:5}
+.gatebar.open{border-color:var(--ok)}
+.gatebar.shut{border-color:var(--err)}
+.gatebar .verdict{flex:1 1 260px;font-size:13px}
+.gatebar .verdict strong{display:block;font-size:14px}
+.tab{margin-bottom:26px}
+.tabhead{display:flex;align-items:baseline;gap:10px;border-bottom:2px solid var(--accent);
+  padding-bottom:5px;margin-bottom:0}
+.tabhead h2{margin:0;font-size:15px;color:var(--accent)}
+.tabhead span{color:var(--muted);font-size:12px}
+.blockhead{font-family:var(--mono);font-size:11.5px;letter-spacing:.06em;color:var(--muted);
+  background:var(--bg);border-left:3px solid var(--line);padding:6px 10px;margin-top:14px}
+.rule{border-bottom:1px solid var(--line);padding:10px 4px 10px 10px;display:flex;gap:12px}
+.rule:hover{background:var(--accent-soft)}
+.rule .n{font-family:var(--mono);font-size:11.5px;color:var(--muted);flex:0 0 26px;
+  text-align:right;padding-top:2px}
+.rule .body{flex:1 1 auto;min-width:0}
+.rule .intent{font-size:13.5px}
+.rule .fields{font-family:var(--mono);font-size:12px;color:var(--muted);margin-top:3px;
+  word-break:break-word}
+.rule .fields b{color:var(--ink);font-weight:600}
+.act{display:inline-block;font-family:var(--mono);font-size:10.5px;padding:1px 6px;
+  border-radius:3px;flex:0 0 auto;height:fit-content;margin-top:1px}
+.act.pass{background:var(--ok-soft);color:var(--ok);border:1px solid var(--ok)}
+.act.block,.act.reject{background:var(--err-soft);color:var(--err);border:1px solid var(--err)}
+.flags{font-family:var(--mono);font-size:10.5px;color:var(--muted);margin-top:3px}
+.flags em{font-style:normal;color:var(--warn)}
+.preserved{background:var(--warn-soft)}
+</style>
+
+{% if ruleset.warnings %}
+<div class="panel">
+<h2 style="margin-top:0">Read before you type anything</h2>
+{% for warning in ruleset.warnings %}<div class="note warn">{{ warning }}</div>{% endfor %}
+</div>
+{% endif %}
+
+<div class="gatebar {% if gate.may_export %}open{% else %}shut{% endif %}">
+  <div class="verdict">
+    <strong>{% if gate.may_export %}✓ Ready to export{% else %}Not ready to export{% endif %}</strong>
+    {{ gate.reason }}
+  </div>
+  {% if gate.may_export %}
+  <form method="post" action="/rules/{{ enclave }}/export" style="margin:0">
+    <button class="btn" type="submit" style="margin:0">Export the checklist</button></form>
+  {% endif %}
+  {% if not signed_off %}
+  <form method="post" action="/rules/{{ enclave }}/sign-off" style="margin:0">
+    <button class="btn quiet" type="submit" style="margin:0">I have read these — sign off</button></form>
+  {% else %}
+  <span class="tag">signed off</span>
+  {% endif %}
+</div>
+
+{% if gate.blocking %}
+<div class="panel">
+<h2 style="margin-top:0">Blocking — {{ gate.blocking|length }}</h2>
+<p class="sub" style="margin-bottom:10px">These cannot be acknowledged away. Each one is a
+way for this ruleset to be wrong while looking right. Fix the cause and come back.</p>
+{% for finding in gate.blocking %}
+  <div class="note err"><strong>{{ finding.id }}</strong>{% if finding.item %}
+    <code>{{ finding.item }}</code>{% endif %} — {{ finding.message }}</div>
+{% endfor %}
+</div>
+{% endif %}
+
+{% if gate.warnings %}
+<div class="panel">
+<h2 style="margin-top:0">Warnings — {{ gate.unacknowledged|length }} of {{ gate.warnings|length }} outstanding</h2>
+<p class="sub" style="margin-bottom:10px">Each is a decision for a person. Acknowledging one
+says you have read it and meant it.</p>
+<table>
+  <tr><th style="width:110px">id</th><th>finding</th><th style="width:130px"></th></tr>
+  {% for finding in gate.warnings %}
+  <tr>
+    <td class="mono">{{ finding.id }}</td>
+    <td>{{ finding.message }}
+      {% if finding.item %}<div class="sub"><code>{{ finding.item }}</code></div>{% endif %}</td>
+    <td>
+      {% if keys[loop.index0] in gate.acknowledged %}
+        <span class="tag">acknowledged</span>
+      {% else %}
+        <form method="post" action="/rules/{{ enclave }}/acknowledge" style="margin:0">
+          <input type="hidden" name="key" value="{{ keys[loop.index0] }}">
+          <button class="btn small quiet" type="submit" style="margin:0">Acknowledge</button>
+        </form>
+      {% endif %}
+    </td>
+  </tr>
+  {% endfor %}
+</table>
+</div>
+{% endif %}
+
+{# ---- the ruleset itself -------------------------------------------------- #}
+<h2>The ruleset, in the order it is typed</h2>
+{% for tab in tabs %}
+<div class="tab panel">
+  <div class="tabhead">
+    <h2>{{ tab.name }}{% if tab.name not in ("Floating", "WAN") %} tab{% else %} tab{% endif %}</h2>
+    <span>{{ tab.blocks|map(attribute='rules')|map('length')|sum }} rules</span>
+  </div>
+  {% for block in tab.blocks %}
+  <div class="blockhead">{{ block.name }}
+    {% if block.name == "PRESERVED" %}— already on the box. Do not retype these.{% endif %}
+    {% if block.name == "BLOCK ALL" %}— anything this segment needs that is not above it
+      will stop working.{% endif %}
+  </div>
+    {% for item in block.rules %}
+    <div class="rule {% if item.generated.preserved %}preserved{% endif %}">
+      <div class="n">{{ loop.index }}</div>
+      <span class="act {{ item.row.action|lower }}">{{ item.row.action }}</span>
+      <div class="body">
+        <div class="intent">{{ item.generated.intent }}</div>
+        <div class="fields">
+          <b>{{ item.row.source }}</b> → <b>{{ item.row.destination }}</b>
+          · {{ item.row.protocol }}{% if item.row.ports %} {{ item.row.ports }}{% endif %}
+          · {{ item.row.family }}
+        </div>
+        <div class="flags">
+          quick {{ item.row.quick }} · log {{ item.row.log }}
+          {% if item.row.description %}· “{{ item.row.description }}”{% endif %}
+          {% if item.generated.preserved %}· <em>preserved — leave it alone</em>{% endif %}
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  {% endfor %}
+</div>
+{% endfor %}
+
+{% if diff %}
+<div class="panel">
+<h2 style="margin-top:0">Against what is on the box now</h2>
+<p class="sub" style="margin-bottom:10px">Matched by what each rule actually does, never by
+its description — a rule that kept its label while its source was widened is a different
+rule, and this says so.
+{{ diff.counts.kept }} kept · {{ diff.counts.added }} added · {{ diff.counts.removed }} removed.</p>
+<table>
+  <tr><th style="width:80px">change</th><th style="width:70px">action</th>
+      <th>rule</th></tr>
+  {% for entry in diff.removed + diff.added + diff.kept %}
+  <tr>
+    <td class="mono">{{ entry.kind }}</td>
+    <td><span class="act {{ entry.action|lower }}">{{ entry.action or "—" }}</span></td>
+    <td>{{ entry.intent or entry.description }}
+      {% if entry.intent and entry.description %}
+      <div class="sub">“{{ entry.description }}”</div>{% endif %}</td>
+  </tr>
+  {% endfor %}
+</table>
+</div>
+{% endif %}
+
+{% if info %}
+<div class="panel">
+<h2 style="margin-top:0">For information — {{ info|length }}</h2>
+{% for finding in info %}
+<div class="sub" style="margin-bottom:6px"><code>{{ finding.id }}</code> {{ finding.message }}</div>
+{% endfor %}
+</div>
+{% endif %}
+{% endif %}
+{% endblock %}

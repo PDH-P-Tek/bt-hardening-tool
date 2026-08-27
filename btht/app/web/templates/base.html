@@ -92,24 +92,57 @@ button.tile{text-align:left;font:inherit;cursor:pointer}
   font-size:12.5px;color:var(--ink);letter-spacing:0}
 .check input{width:auto;margin:0}
 .hint{margin-top:3px}
+.navtile{position:relative}
+.pill{position:absolute;top:9px;right:11px;font-style:normal;font-family:var(--mono);
+  font-size:11px;background:var(--err);color:#fff;border-radius:9px;padding:1px 7px}
+/* The tool spans three days of work in a fixed order. This says where you are up to,
+   on every page, so nobody has to infer the order from a navigation bar. */
+.nextstep{display:flex;align-items:center;gap:14px;text-decoration:none;color:var(--ink);
+  background:var(--accent-soft);border:1px solid var(--accent);border-radius:8px;
+  padding:11px 15px;margin-bottom:20px}
+.nextstep:hover{filter:brightness(1.03)}
+.nextstep-tag{font-family:var(--mono);font-size:10.5px;text-transform:uppercase;
+  letter-spacing:.08em;color:var(--accent);border:1px solid var(--accent);
+  border-radius:4px;padding:2px 7px;flex:0 0 auto}
+.nextstep-body{flex:1 1 auto;min-width:0}
+.nextstep-body strong{display:block;font-size:14px}
+.nextstep-body span{display:block;color:var(--muted);font-size:12.5px;margin-top:1px}
+.nextstep-go{flex:0 0 auto;color:var(--accent);font-size:12.5px;font-weight:600}
+@media (max-width:640px){.nextstep{flex-wrap:wrap}.nextstep-go{margin-left:auto}}
+.steps{display:flex;gap:0;flex-wrap:wrap;margin-bottom:20px;font-size:12.5px}
+.steps a{display:flex;align-items:center;gap:7px;text-decoration:none;color:var(--muted);
+  padding:8px 14px 8px 12px;background:var(--panel);border:1px solid var(--line);
+  border-right:0;flex:1 1 auto;min-width:0}
+.steps a:first-child{border-radius:7px 0 0 7px}
+.steps a:last-child{border-right:1px solid var(--line);border-radius:0 7px 7px 0}
+.steps a.done{color:var(--ok)}
+.steps a.now{background:var(--accent-soft);border-color:var(--accent);color:var(--accent);
+  font-weight:600}
+.steps .mark{font-family:var(--mono);flex:0 0 auto}
+.steps .name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 </style>
 </head>
 <body>
 <div class="wrap">
 <nav class="mainnav">
-  <a class="navtile {% if page == 'range' %}here{% endif %}" href="/range">
-    <strong>Range</strong><span>enclaves, interfaces, hosts</span></a>
+  <a class="navtile {% if page in ('range','segments','services','types') %}here{% endif %}" href="/range">
+    <strong>1 · Range</strong><span>enclaves, machines, routers</span></a>
+  <a class="navtile {% if page == 'rules' %}here{% endif %}" href="/rules">
+    <strong>2 · Rules</strong><span>policy, review, export</span></a>
+  <a class="navtile {% if page == 'monitor' %}here{% endif %}" href="/monitor">
+    <strong>3 · Monitor</strong><span>what changed, and who changed it</span>
+    {% if unreviewed %}<em class="pill">{{ unreviewed }}</em>{% endif %}</a>
   <a class="navtile {% if page == 'topology' %}here{% endif %}" href="/range/topology">
     <strong>Topology</strong><span>the range drawn</span></a>
-  <a class="navtile {% if page == 'segments' %}here{% endif %}" href="/segments">
-    <strong>Segment types</strong><span>kinds of network segment</span></a>
-  <a class="navtile {% if page == 'services' %}here{% endif %}" href="/services">
-    <strong>Service templates</strong><span>what a machine runs</span></a>
-  <a class="navtile {% if page == 'types' %}here{% endif %}" href="/host-templates">
-    <strong>Host templates</strong><span>kinds of machine</span></a>
-  <a class="navtile {% if page == 'monitor' %}here{% endif %}" href="/range/monitor">
-    <strong>Monitor</strong><span>what changed</span></a>
 </nav>
+{% if next_step and page != 'guide' %}
+<a class="nextstep" href="{{ next_step.href }}">
+  <span class="nextstep-tag">next</span>
+  <span class="nextstep-body"><strong>{{ next_step.title }}</strong>
+    <span>{{ next_step.why }}</span></span>
+  <span class="nextstep-go">{{ next_step.action }} →</span>
+</a>
+{% endif %}
 {% for kind, message in messages %}<div class="note {{ kind }}">{{ message }}</div>{% endfor %}
 {% block body %}{% endblock %}
 </div>

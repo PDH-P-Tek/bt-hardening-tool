@@ -30,16 +30,16 @@ from urllib.parse import urlencode
 
 from btht.app.model.estate import Estate, Firewall, Host, Interface, Node
 
-CARD_WIDTH = 250
-CARD_HEIGHT = 54
-HOST_WIDTH = 132
-HOST_HEIGHT = 46
+CARD_WIDTH = 290
+CARD_HEIGHT = 64
+HOST_WIDTH = 158
+HOST_HEIGHT = 54
 GAP = 20
 PADDING = 22
-LABEL_BASELINE = 19
-SUBLABEL_BASELINE = 34
+LABEL_BASELINE = 24
+SUBLABEL_BASELINE = 42
 HOSTS_PER_ROW = 4
-UPLINK_HEIGHT = 46
+UPLINK_HEIGHT = 54
 SPINE_INSET = 14
 
 
@@ -114,13 +114,13 @@ class View:
         params = [("open", i) for i in sorted(self.toggled(node_id))]
         params.append(("focus", node_id))
         params.extend(self._filter_params())
-        return f"/estates/{slug}/topology?{urlencode(params)}"
+        return f"/range/topology?{urlencode(params)}"
 
     def focus_link(self, node_id: str, slug: str) -> str:
         params = [("open", i) for i in sorted(self.open_ids)]
         params.append(("focus", node_id))
         params.extend(self._filter_params())
-        return f"/estates/{slug}/topology?{urlencode(params)}"
+        return f"/range/topology?{urlencode(params)}"
 
     def open_all_link(self, firewall: Firewall, slug: str) -> str:
         """One click for the whole enclave — the wall-poster view of one firewall."""
@@ -132,7 +132,7 @@ class View:
         params = [("open", i) for i in sorted(everything)]
         params.append(("focus", firewall.enclave))
         params.extend(self._filter_params())
-        return f"/estates/{slug}/topology?{urlencode(params)}"
+        return f"/range/topology?{urlencode(params)}"
 
     def _filter_params(self) -> list[tuple[str, str]]:
         out = []
@@ -535,8 +535,9 @@ def _focus_detail(estate: Estate, view: View, catalogue: Any) -> dict[str, Any]:
 def render_svg(diagram: Diagram) -> str:
     """Inline SVG. No external references, so it renders with no network at all."""
     parts = [
-        f'<svg viewBox="0 0 {diagram.width} {diagram.height}" width="100%" '
-        f'height="{diagram.height}" xmlns="http://www.w3.org/2000/svg" '
+        f'<svg viewBox="0 0 {diagram.width} {diagram.height}" '
+        f'width="{diagram.width}" height="{diagram.height}" '
+        'xmlns="http://www.w3.org/2000/svg" '
         'role="img" aria-label="estate topology">'
     ]
     for link in diagram.links:

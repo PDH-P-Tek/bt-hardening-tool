@@ -358,12 +358,20 @@ def test_an_unpolled_device_is_not_painted_healthy() -> None:
     assert "unreachable" in down["alpha"].sublabel
 
 
-def test_the_monitor_view_reuses_the_topology_rather_than_duplicating_it() -> None:
-    """One component, two consumers — the same economy as the platform adapters."""
+def test_the_dashboard_is_host_tiles_not_the_topology() -> None:
+    """`MONITORING.md` §8.2 specifies the estate view exactly, and it is not the diagram.
+
+    The topology answers "how is this wired". The dashboard answers "what needs me now",
+    and for that the specified shape is one tile per host coloured by its worst
+    unreviewed finding, with a single total dominating the page. Reusing the diagram
+    here looked economical and produced a page that could not be triaged from.
+    """
     from pathlib import Path
 
-    template = Path("btht/app/web/templates/monitor.html").read_text(encoding="utf-8")
-    assert 'extends "topology.html"' in template
+    template = Path("btht/app/web/templates/monitor_estate.html").read_text(encoding="utf-8")
+    assert 'extends "topology.html"' not in template
+    assert "hosttile" in template, "one tile per host"
+    assert "bignum" in template, "one number dominates the page"
 
 
 # --- pfSense adapter, Phase 6.1 ---------------------------------------------
