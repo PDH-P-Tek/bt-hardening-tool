@@ -189,7 +189,8 @@ the alias, rule and NAT sections — no credentials are stored.</p>
 {% if groups or hosts %}
 <div class="panel">
 <table>
-  <tr><th>name</th><th>OS</th><th>address</th><th>type</th><th>services</th><th></th></tr>
+  <tr><th>name</th><th>OS</th><th>address</th><th>type</th><th>services</th>
+      <th>scored (ISA)</th><th></th></tr>
   {% for g in groups %}
   <tr>
     <td><strong>{{ g.name_prefix }}</strong> <span class="tag">{{ g.count }} hosts</span></td>
@@ -198,6 +199,8 @@ the alias, rule and NAT sections — no credentials are stored.</p>
     <td>{{ g.host_type }}</td>
     <td>{{ group_services[g.name_prefix]|join(", ") or "—" }}
       {% if inherited[g.name_prefix] %}<span class="tag">from template</span>{% endif %}</td>
+    <td>{% for check in g.isa_checks %}<span class="tag {% if check == 'HOST' %}ok{% endif %}">{{ check }}</span> {% endfor %}
+      {% if not g.isa_checks %}<span class="sub">not scored</span>{% endif %}</td>
     <td>{{ form.opener("edit-group-" ~ g.name_prefix, "Edit") }}</td>
   </tr>
   {% endfor %}
@@ -208,6 +211,8 @@ the alias, rule and NAT sections — no credentials are stored.</p>
     <td>{{ h.service_role }}</td>
     <td>{{ host_services[h.hostname]|join(", ") or "—" }}
       {% if inherited[h.hostname] %}<span class="tag">from template</span>{% endif %}</td>
+    <td>{% for check in h.isa_checks %}<span class="tag {% if check == 'HOST' %}ok{% endif %}">{{ check }}</span> {% endfor %}
+      {% if not h.isa_checks %}<span class="sub">not scored</span>{% endif %}</td>
     <td>{{ form.opener("edit-host-" ~ h.hostname, "Edit") }}</td>
   </tr>
   {% endfor %}
