@@ -600,6 +600,88 @@ def icmp6_minimum(context: Context) -> list[Finding]:
     ]
 
 
+#: IPv4 ICMP types with no business crossing a segment boundary inbound. Echo is the
+#: exception and is handled separately, because the scoring bot needs it.
+ICMP_UNNEEDED = ("timestamp", "timereq", "maskreq", "inforeq", "redir", "routeradv")
+
+
+@validator("V-ICMP-EXPOSURE", Severity.WARNING)
+def icmp_exposure(context: Context) -> list[Finding]:
+    """ICMP echo passed from an unrestricted source.
+
+    Availability scoring is decided by ICMP, so blocking echo outright loses points and
+    is never the advice. The exposure is passing it *from anywhere*: an implant on a
+    firewall can be woken by a crafted echo — a particular payload size is enough — and
+    the reply path out is a shell. Restricting echo to the scoring sources and the
+    management range keeps every point and removes the trigger from everybody else.
+
+    Warning rather than blocking, because a range may legitimately want echo working
+    between segments for diagnosis, and that is the operator's call to make knowingly.
+    """
+    findings = []
+    for generated in context.ruleset.all_rules():
+        rule = generated.rule
+        if rule.action is not Action.PASS:
+            continue
+        # IPv4 echo specifically, or ICMP passed wholesale with no types named. The
+        # ICMPv6 minimum set is neither: it names its types and *must* come from any,
+        # because neighbour discovery and router advertisement originate from
+        # link-local addresses this ruleset never enumerates. Flagging it would train
+        # the operator to ignore this check, and F5 is emphatic that narrowing ICMPv6
+        # breaks IPv6 in ways that fail slowly.
+        wholesale = rule.protocol == "icmp" and not rule.icmp_types
+        if "echoreq" not in rule.icmp_types and not wholesale:
+            continue
+        if not _endpoint_is_any(rule.source):
+            continue
+        if generated.block == SCORING:
+            continue
+        findings.append(
+            Finding(
+                "V-ICMP-EXPOSURE",
+                Severity.WARNING,
+                "ICMP echo is passed from any source by "
+                f"'{rule.descr or generated.intent}'. Scoring only needs it from the "
+                "scoring sources, and echo reachable from everywhere is a wake-up "
+                "signal for anything already implanted on the box. Narrow the source "
+                "to the scoring and management ranges — the availability points are "
+                "unaffected.",
+                item=generated.intent,
+            )
+        )
+    return findings
+
+
+@validator("V-ICMP-EXTRA-TYPES", Severity.WARNING)
+def icmp_extra_types(context: Context) -> list[Finding]:
+    """ICMP types beyond what anything needs.
+
+    Timestamp and address-mask requests leak host information for nothing in return,
+    and redirects accepted inbound let somebody else edit the routing table. None is
+    needed by any scored check.
+    """
+    findings = []
+    for generated in context.ruleset.all_rules():
+        rule = generated.rule
+        if rule.action is not Action.PASS:
+            continue
+        unneeded = sorted(set(rule.icmp_types) & set(ICMP_UNNEEDED))
+        if not unneeded:
+            continue
+        findings.append(
+            Finding(
+                "V-ICMP-EXTRA-TYPES",
+                Severity.WARNING,
+                f"'{rule.descr or generated.intent}' passes ICMP {', '.join(unneeded)}. "
+                "Nothing scored needs these; timestamp and mask requests give away host "
+                "detail, and an accepted redirect lets somebody else steer your traffic. "
+                "Echo request is the only IPv4 type availability scoring needs.",
+                item=generated.intent,
+            )
+        )
+    return findings
+
+
 @validator("V-UNVERIFIED-SERVICE", Severity.WARNING)
 def unverified_service(context: Context) -> list[Finding]:
     """A service permitted broadly because its ports are not known yet."""

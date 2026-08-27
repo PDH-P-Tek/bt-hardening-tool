@@ -72,7 +72,7 @@ def test_the_whole_catalogue_is_silent_on_a_clean_baseline() -> None:
 
 
 def test_every_registered_id_has_a_severity() -> None:
-    assert len(REGISTRY) == 31, "the catalogue in SPEC.md §8 has 31 IDs"
+    assert len(REGISTRY) == 33, "the catalogue in SPEC.md §8 has 33 IDs"
     for check_id, (severity, _fn) in REGISTRY.items():
         assert isinstance(severity, Severity), check_id
 
@@ -305,6 +305,99 @@ def test_icmp6_minimum_fires_when_the_set_is_narrowed() -> None:
     policy = replace(a_policy(), options=Options(icmp6_minimum=(128,)))
     ruleset = generate(a_firewall(), policy, CATALOGUE, essential=ESSENTIAL)
     assert fired(clean_context(ruleset=ruleset, policy=policy), "V-ICMP6-MINIMUM")
+
+
+def test_icmp_exposure_fires_when_echo_is_open_to_everybody() -> None:
+    """The trigger half of the implant chain in `HARDENING.md` §9.1.
+
+    Availability is scored over ICMP, so echo is never blocked outright — the exposure
+    is passing it from anywhere. An agent already on a firewall can be woken by a
+    crafted echo, and echo reachable from the whole range means anybody can send it.
+    """
+    from btht.app.generate.order import POLICY, GeneratedRule, Ruleset
+    from btht.app.model.rules import Action, AnyEndpoint, Rule
+
+    ruleset = Ruleset(
+        firewall="alpha",
+        floating=(
+            GeneratedRule(
+                rule=Rule(
+                    action=Action.PASS,
+                    interfaces=("lan",),
+                    protocol="icmp",
+                    icmp_types=("echoreq",),
+                    source=AnyEndpoint(),
+                    descr="ping anywhere",
+                ),
+                block=POLICY,
+                intent="ping anywhere",
+            ),
+        ),
+    )
+    assert fired(clean_context(ruleset=ruleset), "V-ICMP-EXPOSURE")
+
+
+def test_icmp_exposure_stays_silent_on_the_scoring_rules() -> None:
+    """Scoring rules pass echo by design, from the scoring alias to one named host."""
+    ruleset = generate(
+        a_firewall(),
+        a_policy(),
+        CATALOGUE,
+        scoring_source=Selector(alias="Scoring_Sources"),
+        essential=ESSENTIAL,
+    )
+    assert not fired(clean_context(ruleset=ruleset), "V-ICMP-EXPOSURE")
+
+
+def test_icmp_exposure_stays_silent_on_the_required_icmpv6_set() -> None:
+    """`BASELINE-ANALYSIS.md` F5 — neighbour discovery and RA come from link-local
+    addresses this ruleset never enumerates, so they must be passed from any. Flagging
+    them would train the operator to ignore the check."""
+    ruleset = generate(
+        a_firewall(),
+        a_policy(),
+        CATALOGUE,
+        scoring_source=Selector(alias="Scoring_Sources"),
+        essential=ESSENTIAL,
+    )
+    assert any(g.rule.icmp_types for g in ruleset.all_rules()), "the v6 set is present"
+    assert not fired(clean_context(ruleset=ruleset), "V-ICMP-EXPOSURE")
+
+
+def test_icmp_extra_types_fires_on_timestamp_and_redirect() -> None:
+    """Nothing scored needs them; they leak host detail or hand over the routing table."""
+    from btht.app.generate.order import POLICY, GeneratedRule, Ruleset
+    from btht.app.model.rules import Action, AliasRef, Rule
+
+    ruleset = Ruleset(
+        firewall="alpha",
+        floating=(
+            GeneratedRule(
+                rule=Rule(
+                    action=Action.PASS,
+                    interfaces=("lan",),
+                    protocol="icmp",
+                    icmp_types=("echoreq", "timestamp", "redir"),
+                    source=AliasRef("Mgmt_Sources"),
+                    descr="diagnostics",
+                ),
+                block=POLICY,
+                intent="diagnostics",
+            ),
+        ),
+    )
+    assert fired(clean_context(ruleset=ruleset), "V-ICMP-EXTRA-TYPES")
+
+
+def test_icmp_extra_types_stays_silent_on_a_clean_ruleset() -> None:
+    ruleset = generate(
+        a_firewall(),
+        a_policy(),
+        CATALOGUE,
+        scoring_source=Selector(alias="Scoring_Sources"),
+        essential=ESSENTIAL,
+    )
+    assert not fired(clean_context(ruleset=ruleset), "V-ICMP-EXTRA-TYPES")
 
 
 def test_unverified_service_fires_on_a_service_with_no_ports() -> None:

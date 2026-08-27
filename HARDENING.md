@@ -193,6 +193,52 @@ Confirmed platform. Routing is a pivot mechanism: an adversary that joins the ro
 
 `H-FRR-04` and `H-FRR-05` together are what stop an adversary with a foothold on any attached segment from becoming a routing peer. On a range with flat-ish enclave segments they are the difference between a compromised host and a compromised path.
 
+## 9.1 `H-IMP-*` — an agent already on the box
+
+The rest of this document asks whether a box is configured to resist being taken. This
+asks whether it has already been taken, and it is written against one specific chain
+seen in play rather than an imagined one:
+
+1. `curl` a payload down — a Tuoni or Metasploit agent, typically named to look like
+   part of the platform (`fwshell` and similar).
+2. **Move it somewhere persistent.** On pfSense `/tmp` and `/var` are memory-backed, so
+   an implant left there dies at the next reboot. `/usr/` and friends survive, and the
+   attacker knows it.
+3. `chmod +x`.
+4. Persist: `echo "@reboot /path/to/fwshell" | crontab -`, or an entry in `config.xml`.
+5. Wake it. The trigger can be as quiet as a crafted ICMP echo of a particular size,
+   which matters because availability scoring means echo is never blocked outright.
+
+| ID | Check | Recommended | Rationale |
+|---|---|---|---|
+| `H-IMP-01` | `earlyshellcmd` / `shellcmd` in `config.xml` | None present | A stock pfSense has neither element. The baseline is empty, so **any** member was put there deliberately by somebody. Removing the binary and leaving this re-runs it at the next boot. |
+| `H-IMP-02` | Processes running a **deleted** binary | None | What a payload does when it unlinks itself after starting. On a firewall running a fixed set of services there is no benign explanation. |
+| `H-IMP-03` | Processes running from a **world-writable** path | None | `/tmp`, `/dev/shm`, a home directory — it is running something anybody with a shell could have replaced. |
+| `H-IMP-04` | `@reboot` or writable-path entries in any scheduled job | None | The standard way an implant survives the reboot you were relying on to clear it. Remove it *before* rebooting, or the reboot is what starts it. |
+| `H-IMP-05` | Listening sockets against the as-received baseline | Matches | A bind shell is a listener that was not there yesterday, and the baseline is the only reliable record of yesterday. |
+
+**Every one of these reports `unknown` rather than `pass` when its collector did not
+run.** An implant check that passes because it saw nothing is worse than no check.
+
+### What actually stops it
+
+The checks above find an agent that is already there. Two controls stop it arriving, and
+both belong to the generator rather than here:
+
+- **Egress default-deny with logging.** Every step of that chain needs the box to reach
+  the internet or the attacker's host — the `curl` to fetch the payload, and the shell
+  to call home. A firewall that cannot open an outbound connection to an undeclared
+  destination defeats the whole sequence at step one, and the log line names the box.
+  This is the single highest-value control in the tool and it is one policy setting.
+- **ICMP narrowed to the sources that need it** (`V-ICMP-EXPOSURE`). Availability is
+  scored over ICMP, so echo is never blocked — but it only ever needs to arrive from
+  the scoring sources and the management range. Echo reachable from the whole range is
+  a wake-up signal available to everybody. `V-ICMP-EXTRA-TYPES` covers the rest:
+  nothing scored needs timestamp, address-mask or redirect, and an accepted redirect
+  lets somebody else steer traffic.
+
+---
+
 ## 10. Exercise-specific caveats
 
 Read before applying anything.

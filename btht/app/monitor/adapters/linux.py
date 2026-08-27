@@ -43,6 +43,14 @@ COMMANDS = {
     "H-SSH-CONFIG": "sshd -T",
     "M-STATE-UPTIME": "uptime",
     "M-STATE-WHO": "who",
+    # An implant has to live somewhere and has to run. `ls -l /proc/*/exe` answers
+    # both at once: where each running process came from, and whether that file is
+    # still on disk. Neither needs a shell pipeline, which the transport refuses.
+    "M-SVC-05": "ls -l /proc/*/exe",
+    # Executables in the places a dropped payload goes. `/tmp` and `/var/tmp` are the
+    # obvious ones; the interesting case is a binary that has been moved somewhere
+    # persistent precisely because /tmp does not survive a reboot.
+    "M-FS-05": "find /usr/local/bin /usr/local/sbin /root /home -maxdepth 3 -type f -perm -u+x",
     # Session evidence — see `monitor/sessions.py`. `-F` for full timestamps, without
     # which a login carries no year and cannot be placed against a change.
     "M-SESS-01": "last -F -w -n 120",
@@ -279,6 +287,81 @@ def _collector_integrity(output: str) -> list[Item]:
     ]
 
 
+#: Directories no long-running service should be executing from. `/tmp` and `/dev/shm`
+#: are where a payload lands first; `/home` because a service running out of somebody's
+#: home directory is either a mistake or somebody else's idea.
+SUSPICIOUS_PREFIXES = ("/tmp/", "/var/tmp/", "/dev/shm/", "/home/", "/run/shm/")
+
+
+def _running_from(output: str) -> list[Item]:
+    """`M-SVC-05`, `M-SVC-06` — what each process is actually running.
+
+    Two findings hide in one listing. A process whose binary sits in a world-writable
+    directory is running something anybody could have put there. A process whose binary
+    is marked `(deleted)` is running something that no longer exists on disk — which is
+    what a payload does when it unlinks itself after starting, and is close to
+    conclusive on a firewall that runs a fixed set of services.
+
+    Both are config rather than state: the set of things running on a firewall is meant
+    to be stable, and a new member is exactly the news this tool exists to carry.
+    """
+    out: list[Item] = []
+    for line in output.splitlines():
+        if "->" not in line or "/proc/" not in line:
+            continue
+        left, _, target = line.partition("->")
+        target = target.strip()
+        pid = ""
+        for part in left.split():
+            if part.startswith("/proc/"):
+                pid = part.split("/")[2]
+        if not pid or not target:
+            continue
+
+        if target.endswith("(deleted)"):
+            binary = target[: -len("(deleted)")].strip()
+            out.append(
+                Item(
+                    key=f"deleted-binary:{binary}",
+                    collector="M-SVC-06",
+                    kind=Kind.CONFIG,
+                    value=f"pid {pid} running {binary}, which is no longer on disk",
+                    severity=Severity.CRITICAL,
+                    label=f"running a deleted binary: {binary}",
+                )
+            )
+            continue
+
+        if target.startswith(SUSPICIOUS_PREFIXES):
+            out.append(
+                Item(
+                    key=f"writable-path:{target}",
+                    collector="M-SVC-05",
+                    kind=Kind.CONFIG,
+                    value=f"pid {pid} running {target}",
+                    severity=Severity.CRITICAL,
+                    label=f"running from a writable path: {target}",
+                )
+            )
+    return out
+
+
+def _executables(output: str) -> list[Item]:
+    """`M-FS-05` — executable files where a dropped payload gets moved to persist."""
+    return [
+        Item(
+            key=f"executable:{path.strip()}",
+            collector="M-FS-05",
+            kind=Kind.CONFIG,
+            value=path.strip(),
+            severity=Severity.HIGH,
+            label=f"executable {path.strip()}",
+        )
+        for path in output.splitlines()
+        if path.strip()
+    ]
+
+
 def collect(transport: Transport, secret: str = "btht") -> Collection:
     """Poll one Linux host. A host that stops answering is itself the alarm.
 
@@ -310,6 +393,8 @@ def collect(transport: Transport, secret: str = "btht") -> Collection:
                 items += _cron(cron.stdout, collector)
 
         for collector, parser in (
+            ("M-SVC-05", _running_from),
+            ("M-FS-05", _executables),
             ("M-SVC-01", _listening),
             ("M-BOOT-02", _boot_hook),
             ("M-FS-01", _canaries),

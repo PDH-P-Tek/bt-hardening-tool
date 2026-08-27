@@ -225,6 +225,100 @@ def _live_ruleset(output: str) -> list[Item]:
     ]
 
 
+def _boot_commands(root: ET.Element) -> list[Item]:
+    """`M-BOOT-02`, `M-BOOT-03` — commands pfSense runs at boot, from `config.xml`.
+
+    The persistence favourite on this platform, and the reason is structural: `/tmp`
+    and `/var` are memory-backed, so an implant left there dies at the next reboot. What
+    survives is a command recorded in `config.xml`, which is also the one file nobody
+    reads by eye because it is thirty thousand lines long.
+
+    Any entry here is critical. There is no benign default — a stock pfSense has none of
+    these elements at all, so the correct baseline is an empty set and *any* member is
+    worth waking somebody for.
+    """
+    out: list[Item] = []
+    system = root.find("system")
+    if system is not None:
+        for index, element in enumerate(system.findall("earlyshellcmd")):
+            command = (element.text or "").strip()
+            if command:
+                out.append(
+                    Item(
+                        key=f"pf:earlyshellcmd:{index}",
+                        collector="M-BOOT-02",
+                        kind=Kind.CONFIG,
+                        value=command,
+                        severity=Severity.CRITICAL,
+                        label=f"runs at boot (earlyshellcmd): {command[:80]}",
+                    )
+                )
+    for index, element in enumerate(root.iter("shellcmd")):
+        command = (element.text or "").strip()
+        if command:
+            out.append(
+                Item(
+                    key=f"pf:shellcmd:{index}",
+                    collector="M-BOOT-03",
+                    kind=Kind.CONFIG,
+                    value=command,
+                    severity=Severity.CRITICAL,
+                    label=f"runs at boot (shellcmd): {command[:80]}",
+                )
+            )
+    return out
+
+
+def _cron(root: ET.Element) -> list[Item]:
+    """`M-SCHED-04` — pfSense's own cron entries, which live in `config.xml`.
+
+    A stock install has a handful of housekeeping jobs, so unlike the boot commands the
+    baseline here is not empty. The diff is what matters: an added entry, or a changed
+    command on an existing one.
+    """
+    out: list[Item] = []
+    for index, item in enumerate(root.iter("item")):
+        command = item.findtext("command", "").strip()
+        if not command:
+            continue
+        when = " ".join(
+            item.findtext(field, "").strip()
+            for field in ("minute", "hour", "mday", "month", "wday")
+        ).strip()
+        who = item.findtext("who", "").strip()
+        out.append(
+            Item(
+                key=f"pf:cron:{index}",
+                collector="M-SCHED-04",
+                kind=Kind.CONFIG,
+                value=f"{when} {who} {command}".strip(),
+                severity=Severity.CRITICAL,
+                label=f"scheduled: {command[:80]}",
+            )
+        )
+    return out
+
+
+def _packages(root: ET.Element) -> list[Item]:
+    """`M-SVC-04` — installed packages. A new one is a new attack surface, chosen by somebody."""
+    out: list[Item] = []
+    for package in root.iter("package"):
+        name = package.findtext("name", "").strip()
+        if not name:
+            continue
+        out.append(
+            Item(
+                key=f"pf:package:{name}",
+                collector="M-SVC-04",
+                kind=Kind.CONFIG,
+                value=f"{name} {package.findtext('version', '').strip()}".strip(),
+                severity=Severity.HIGH,
+                label=f"package {name}",
+            )
+        )
+    return out
+
+
 def collect(transport: Transport, secret: str = "btht") -> Collection:
     items: list[Item] = []
     try:
@@ -239,6 +333,11 @@ def collect(transport: Transport, secret: str = "btht") -> Collection:
 
         items += _accounts(root, secret)
         items += _groups(root)
+        # Most persistence on this platform lives in config.xml — `MONITORING.md` §6.1.
+        # One parsed artefact, four more collectors, no extra command on the box.
+        items += _boot_commands(root)
+        items += _cron(root)
+        items += _packages(root)
         try:
             items += _rules(config.stdout)
         except ParseError as exc:

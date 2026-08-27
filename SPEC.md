@@ -365,6 +365,8 @@ Pure functions, stable IDs, one golden test each asserting both that it fires on
 | `V-ALIAS-NAME-HYGIENE` | Alias name contains `temp`/`tmp`/`test`/`todo`/`xxx` | **E4** |
 | `V-OVERBROAD-SCORING-SOURCE` | A scoring rule uses source `any` instead of the scoring source | **E10** |
 | `V-ICMP6-MINIMUM` | ICMPv6 types 2, 128, 129, 133–136 not all passed | F5 |
+| `V-ICMP-EXPOSURE` | ICMP echo passed from any source outside the scoring block | |
+| `V-ICMP-EXTRA-TYPES` | ICMP timestamp, mask, info or redirect passed | |
 | `V-UNVERIFIED-SERVICE` | A service is permitted allow-all pending port discovery | |
 | `V-ANTILOCKOUT-DISABLED` | Output disables built-in anti-lockout | |
 | `V-ANNEX-CONFIG-MISMATCH` | Annex subnets disagree with config interfaces | |

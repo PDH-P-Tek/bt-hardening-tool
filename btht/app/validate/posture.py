@@ -17,7 +17,7 @@ disabled. That sequence belongs to the operator; this module reports state.
 from __future__ import annotations
 
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import StrEnum
 
 from btht.app.monitor.items import Item
@@ -234,11 +234,136 @@ def check_routing(items: Iterable[Item]) -> list[Check]:
     ]
 
 
+def check_implant(items: Iterable[Item]) -> list[Check]:
+    """`H-IMP-*` — indicators of an agent or reverse shell already on the box.
+
+    This is a different question again. `H-SSH-*` and `H-PF-*` ask whether the box is
+    configured to resist being taken; these ask whether it has already been taken. They
+    are written against one specific chain, observed rather than imagined:
+
+        curl a payload down → move it somewhere persistent, because /tmp and /var are
+        memory-backed on pfSense and do not survive a reboot → chmod +x →
+        `echo "@reboot /path/to/fwshell" | crontab -`, or an entry in config.xml
+
+    Each step leaves a different trace, and none of them is subtle once you are looking.
+    The reason they go unnoticed is that nobody looks at `config.xml` by eye and nobody
+    diffs a crontab between shifts. That is the whole job of this tool.
+
+    Every check here reports **UNKNOWN** rather than PASS when the collector that feeds
+    it did not run. An implant check that passes because it saw nothing is worse than no
+    check at all.
+    """
+    collected = list(items)
+    checks: list[Check] = []
+
+    boot = [i for i in collected if i.collector in ("M-BOOT-02", "M-BOOT-03")]
+    checks.append(
+        Check(
+            id="H-IMP-01",
+            title="No commands are run at boot",
+            result=Result.FAIL if boot else Result.PASS,
+            detail=(
+                "; ".join(i.value[:120] for i in boot)
+                if boot
+                else "no earlyshellcmd or shellcmd entries"
+            ),
+            remediation="A stock pfSense has none of these. Every entry was put there "
+            "deliberately by somebody — establish who, then remove it in the GUI under "
+            "Diagnostics or by editing the entry out of config.xml. Removing the binary "
+            "without removing this leaves it to be re-run at the next boot.",
+            scoring_risk="none",
+        )
+    )
+
+    deleted = _by_collector(collected, "M-SVC-06")
+    checks.append(
+        Check(
+            id="H-IMP-02",
+            title="Nothing is running from a binary that has been deleted",
+            result=Result.FAIL if deleted else Result.PASS,
+            detail="; ".join(i.value[:120] for i in deleted) or "none",
+            remediation="A running process whose executable is gone from disk unlinked "
+            "itself after starting. On a firewall running a fixed set of services there "
+            "is no benign explanation. Capture the process before killing it — `ls -l "
+            "/proc/<pid>/exe`, `ss -tnp`, and the open sockets tell you where it calls "
+            "home — then treat the box as compromised.",
+            scoring_risk="none",
+        )
+    )
+
+    writable = _by_collector(collected, "M-SVC-05")
+    checks.append(
+        Check(
+            id="H-IMP-03",
+            title="Nothing is running from a world-writable directory",
+            result=Result.FAIL if writable else Result.PASS,
+            detail="; ".join(i.value[:120] for i in writable) or "none",
+            remediation="A service executing out of /tmp, /dev/shm or a home directory "
+            "is running something anybody with a shell could have replaced. Identify it "
+            "before killing it, and check the scheduled jobs and boot commands for the "
+            "thing that will start it again.",
+            scoring_risk="none",
+        )
+    )
+
+    scheduled = [
+        i
+        for i in collected
+        if i.collector in ("M-SCHED-01", "M-SCHED-02", "M-SCHED-04")
+        and ("@reboot" in i.value or "/tmp/" in i.value or "/dev/shm/" in i.value)
+    ]
+    checks.append(
+        Check(
+            id="H-IMP-04",
+            title="No scheduled job restarts something at boot from a writable path",
+            result=Result.FAIL if scheduled else Result.PASS,
+            detail="; ".join(i.value[:120] for i in scheduled) or "none",
+            remediation="`@reboot` in a crontab is the standard way an implant survives "
+            "the reboot you were relying on to clear it. Remove the entry before you "
+            "reboot, not after — otherwise the reboot is what starts it.",
+            scoring_risk="none",
+        )
+    )
+
+    listeners = _by_collector(collected, "M-SVC-01")
+    checks.append(
+        Check(
+            id="H-IMP-05",
+            title="Listening ports are the ones you expect",
+            result=Result.UNKNOWN if not listeners else Result.PASS,
+            detail=f"{len(listeners)} listening socket(s) recorded"
+            if listeners
+            else "no listening-socket collection in this item set",
+            remediation="Compare against the as-received baseline rather than against "
+            "memory. A bind shell is a listener that was not there yesterday, and the "
+            "baseline is the only reliable record of yesterday.",
+            scoring_risk="none",
+        )
+    )
+
+    # An implant check that passes because nothing was collected is worse than none.
+    if not any(
+        i.collector in ("M-BOOT-02", "M-BOOT-03", "M-SVC-05", "M-SVC-06", "M-SCHED-01")
+        for i in collected
+    ):
+        checks = [
+            replace(
+                check,
+                result=Result.UNKNOWN,
+                detail="the collectors these depend on did not run on this box",
+            )
+            if check.result is Result.PASS
+            else check
+            for check in checks
+        ]
+    return checks
+
+
 def run_posture(items: Iterable[Item]) -> tuple[Check, ...]:
     """Every check, over one collected item set. Ordered by ID for stable output."""
     collected = list(items)
     checks: list[Check] = []
-    for group in (check_ssh, check_accounts, check_firewall, check_routing):
+    for group in (check_ssh, check_accounts, check_firewall, check_routing, check_implant):
         checks.extend(group(collected))
     return tuple(sorted(checks, key=lambda c: c.id))
 
