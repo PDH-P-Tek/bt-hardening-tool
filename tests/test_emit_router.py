@@ -189,3 +189,36 @@ def test_the_checklist_says_what_this_does_not_cover() -> None:
 def test_output_is_deterministic() -> None:
     assert control_plane_nft(a_router()) == control_plane_nft(a_router())
     assert sshd_drop_in(a_router()) == sshd_drop_in(a_router())
+
+
+def test_management_sources_follow_nested_aliases() -> None:
+    """`Mgmt_Sources` is usually defined by nesting, not by listing addresses.
+
+    On the shipped baseline it nests `Remote_Access` and names a segment. Reading only
+    the direct entries returned nothing for the common case, so the tool refused to
+    generate a ruleset that should have generated fine — and the refusal looked like a
+    considered decision rather than a bug.
+    """
+    from btht.app.model.policy import Policy, PolicyAlias
+    from btht.app.web.routerpolicy import derived_mgmt
+
+    policy = Policy(
+        aliases=(
+            PolicyAlias(name="Mgmt_Sources", nested_aliases=("Remote_Access",), segments=("ws",)),
+            PolicyAlias(name="Remote_Access", entries=("172.21.31.0/24", "198.18.128.0/24")),
+        )
+    )
+    assert derived_mgmt(policy) == ("172.21.31.0/24", "198.18.128.0/24")
+
+
+def test_a_cycle_between_aliases_does_not_hang() -> None:
+    from btht.app.model.policy import Policy, PolicyAlias
+    from btht.app.web.routerpolicy import derived_mgmt
+
+    policy = Policy(
+        aliases=(
+            PolicyAlias(name="Mgmt_Sources", nested_aliases=("B",), entries=("10.0.0.0/8",)),
+            PolicyAlias(name="B", nested_aliases=("Mgmt_Sources",)),
+        )
+    )
+    assert derived_mgmt(policy) == ("10.0.0.0/8",)

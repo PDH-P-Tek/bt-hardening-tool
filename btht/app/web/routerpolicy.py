@@ -82,11 +82,35 @@ def derived_peers(estate: Estate, router: str) -> tuple[str, ...]:
     return tuple(dict.fromkeys(peers))
 
 
-def derived_mgmt(policy: Policy) -> tuple[str, ...]:
-    for alias in policy.aliases:
-        if alias.name == MGMT_ALIAS:
-            return alias.entries
-    return ()
+def derived_mgmt(policy: Policy, alias_name: str = MGMT_ALIAS) -> tuple[str, ...]:
+    """Addresses in the management alias, following nesting.
+
+    `Mgmt_Sources` is usually defined by nesting rather than by listing addresses —
+    on the shipped baseline it nests `Remote_Access` and names a segment. Reading only
+    the direct entries therefore returns nothing for the common case, which here means
+    silently refusing to generate a ruleset that should have generated fine.
+
+    Segment members are not resolved: a segment is a role, and turning it into an
+    address needs the firewall it sits on. The operator is shown what was found and
+    can add the rest.
+    """
+    by_name = {alias.name: alias for alias in policy.aliases}
+    out: list[str] = []
+    seen: set[str] = set()
+
+    def walk(name: str) -> None:
+        if name in seen:  # aliases can nest each other into a cycle
+            return
+        seen.add(name)
+        alias = by_name.get(name)
+        if alias is None:
+            return
+        out.extend(alias.entries)
+        for nested in alias.nested_aliases:
+            walk(nested)
+
+    walk(alias_name)
+    return tuple(dict.fromkeys(out))
 
 
 def _tuple(value: object) -> tuple[str, ...]:

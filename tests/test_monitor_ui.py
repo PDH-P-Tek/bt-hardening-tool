@@ -331,3 +331,77 @@ def test_a_probe_reports_rather_than_raising() -> None:
 
     node = Node(name="r1", platform=Platform.LINUX, mgmt_address=ip_address("10.0.0.1"))
     assert probe(node, Credentials(), Exploding()).outcome is Outcome.UNKNOWN
+
+
+# --- S8: proving the monitor actually fires ---------------------------------
+
+
+def test_the_drill_waits_to_be_started(client: TestClient) -> None:
+    """Only changes after the start count, so nothing outstanding gives a false pass."""
+    body = client.get("/monitor/drill").text
+    assert "Start the drill" in body
+    assert "worse than no monitor" in body
+
+
+def test_the_drill_reports_each_plant_separately(client: TestClient, tmp_path: Path) -> None:
+    """Three plants, three verdicts. A single pass/fail hides which collector is dead."""
+    client.post("/monitor/drill/start", follow_redirects=False)
+    body = client.get("/monitor/drill").text
+    assert "Add an account" in body
+    assert "Add an authorised key" in body
+    assert "Widen an alias by one address" in body
+    assert body.count("not seen yet") == 3
+
+
+def test_a_planted_change_is_detected(client: TestClient, tmp_path: Path) -> None:
+    database = tmp_path / "estates" / "monitor.db"
+    Store(database).close()
+    client.post("/monitor/drill/start", follow_redirects=False)
+
+    store = Store(database)
+    store.apply(
+        Collection(
+            host="fw1",
+            items=(
+                Item(
+                    key="account:intruder",
+                    collector="M-ACC-01",
+                    kind=Kind.CONFIG,
+                    value="intruder:x:1001",
+                    label="account intruder",
+                ),
+            ),
+        )
+    )
+    store.close()
+
+    body = client.get("/monitor/drill").text
+    assert "account intruder" in body
+    assert body.count("not seen yet") == 2, "the other two are still outstanding"
+
+
+def test_triaging_the_plant_still_counts_as_detected(client: TestClient, tmp_path: Path) -> None:
+    """Otherwise a tidy operator is told the monitor failed when it worked perfectly."""
+    database = tmp_path / "estates" / "monitor.db"
+    Store(database).close()
+    client.post("/monitor/drill/start", follow_redirects=False)
+
+    store = Store(database)
+    store.apply(
+        Collection(
+            host="fw1",
+            items=(
+                Item(
+                    key="k",
+                    collector="M-AUTH-01",
+                    kind=Kind.CONFIG,
+                    value="SHA256:x",
+                    label="a key",
+                ),
+            ),
+        )
+    )
+    store.accept("fw1", "k", "that was the drill")
+    store.close()
+
+    assert "a key" in client.get("/monitor/drill").text

@@ -437,6 +437,47 @@ class Store:
             taken.setdefault(str(row["host"]), set()).add(str(row["kind"]))
         return taken
 
+    # --- the proving drill — `MONITORING.md` §8, S8 -------------------------
+
+    def drill_started(self) -> str:
+        row = self.connection.execute(
+            "SELECT value FROM meta WHERE name = 'drill_started'"
+        ).fetchone()
+        return "" if row is None else str(row["value"])
+
+    def start_drill(self) -> str:
+        """Mark now, so the drill only counts changes made after it began."""
+        stamp = _now()
+        self.connection.execute(
+            "INSERT INTO meta (name, value) VALUES ('drill_started', ?) "
+            "ON CONFLICT(name) DO UPDATE SET value=excluded.value",
+            (stamp,),
+        )
+        self.connection.commit()
+        return stamp
+
+    def fired_since(self, marker: str, collectors: tuple[str, ...]) -> list[sqlite3.Row]:
+        """Anything one of these collectors reported after `marker`.
+
+        Deliberately not restricted to unreviewed items: an operator who triages the
+        planted change before reading this page has still proved the monitor fired, and
+        a drill that then said "not detected" would teach exactly the wrong lesson.
+        """
+        if not marker or not collectors:
+            return []
+        placeholders = ",".join("?" for _ in collectors)
+        return list(
+            self.connection.execute(
+                f"SELECT * FROM items WHERE collector IN ({placeholders}) "
+                # `>=`, not `>`: timestamps are second-precision, and a plant made in
+                # the same second the drill started is a real detection that a strict
+                # comparison would report as a failure.
+                "AND last_changed >= ? AND kind = 'config' "
+                "ORDER BY last_changed DESC",
+                (*collectors, marker),
+            )
+        )
+
     # --- "changed since I last looked" -------------------------------------
 
     def last_look(self) -> str:

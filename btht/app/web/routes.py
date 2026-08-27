@@ -1313,6 +1313,76 @@ def _scheduler_running(request: Request) -> bool:
     return bool(scheduler and scheduler._task is not None)
 
 
+#: `MONITORING.md` §8, S8. Three plants, each harmless and each trivially reversible,
+#: chosen because between them they cover the three things an intruder actually does to
+#: a box: create an account, install a way back in, and widen what is permitted.
+DRILL = (
+    {
+        "key": "account",
+        "title": "Add an account",
+        "do": "On one box, create a throwaway local user — `useradd btht-drill`.",
+        "undo": "`userdel btht-drill`",
+        "why": "The DCM26 pattern. An account created quietly outlives every rule you write.",
+        "collectors": ("M-ACC-01", "M-ACC-07"),
+    },
+    {
+        "key": "key",
+        "title": "Add an authorised key",
+        "do": "Append any spare public key to an existing account's `authorized_keys`.",
+        "undo": "Remove the line you added.",
+        "why": "A key is a way back in that survives a password change and shows up nowhere "
+        "a person normally looks.",
+        "collectors": ("M-AUTH-01",),
+    },
+    {
+        "key": "alias",
+        "title": "Widen an alias by one address",
+        "do": "In the firewall GUI, add a single address to any alias. Do not save a rule.",
+        "undo": "Remove that address again.",
+        "why": "EVIDENCE.md E5 — a port alias named Temp exposed MySQL to the greynet. "
+        "Nothing about the rules changes, so nothing looks wrong.",
+        "collectors": ("M-PF-01", "M-FW-06", "M-FW-08"),
+    },
+)
+
+
+@router.get("/monitor/drill", response_class=HTMLResponse)
+def monitor_drill(request: Request) -> HTMLResponse:
+    """Prove the monitor actually fires — `MONITORING.md` §8, S8.
+
+    "An untested monitor is worse than no monitor, because the operator trusts it."
+    Everything else in this tool can be verified by reading it. This cannot: a collector
+    that silently returns nothing looks exactly like an estate where nothing has changed.
+    So the operator plants three changes and watches them arrive.
+    """
+    store = _store()
+    try:
+        started = store.drill_started()
+        results = [
+            {**plant, "hits": [dict(r) for r in store.fired_since(started, plant["collectors"])]}
+            for plant in DRILL
+        ]
+    finally:
+        store.close()
+    return render(
+        request,
+        "monitor_drill.html",
+        started=started,
+        results=results,
+        passed=all(r["hits"] for r in results) if started else False,
+    )
+
+
+@router.post("/monitor/drill/start")
+def monitor_drill_start() -> RedirectResponse:
+    store = _store()
+    try:
+        store.start_drill()
+    finally:
+        store.close()
+    return RedirectResponse("/monitor/drill", status_code=303)
+
+
 @router.get("/metrics")
 def metrics() -> Any:
     """Prometheus exposition — `MONITORING.md` §8.2.

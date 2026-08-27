@@ -121,6 +121,10 @@ says you have read it and meant it.</p>
     <h2>{{ tab.name }}{% if tab.name not in ("Floating", "WAN") %} tab{% else %} tab{% endif %}</h2>
     <span>{{ tab.blocks|map(attribute='rules')|map('length')|sum }} rules</span>
   </div>
+  {# Numbering runs down the whole tab, not per block. The number is the position the
+     rule is typed at, and a count that restarts at each heading is a different — and
+     wrong — instruction. #}
+  {% set counter = namespace(n=0) %}
   {% for block in tab.blocks %}
   <div class="blockhead">{{ block.name }}
     {% if block.name == "PRESERVED" %}— already on the box. Do not retype these.{% endif %}
@@ -129,7 +133,8 @@ says you have read it and meant it.</p>
   </div>
     {% for item in block.rules %}
     <div class="rule {% if item.generated.preserved %}preserved{% endif %}">
-      <div class="n">{{ loop.index }}</div>
+      {% set counter.n = counter.n + 1 %}
+      <div class="n">{{ counter.n }}</div>
       <span class="act {{ item.row.action|lower }}">{{ item.row.action }}</span>
       <div class="body">
         <div class="intent">{{ item.generated.intent }}</div>
