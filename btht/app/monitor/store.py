@@ -246,9 +246,21 @@ class Store:
                     )
                 continue
 
+            # Label and severity are how the collector describes the item, not state to
+            # be diffed — refreshed every poll so an item baselined before a collector
+            # learned to name it does not read as a bare key for the rest of the
+            # exercise. Only `value` decides whether anything changed.
             self.connection.execute(
-                "UPDATE items SET current_value = ? WHERE host = ? AND key = ?",
-                (item.value, collection.host, item.key),
+                "UPDATE items SET current_value = ?, label = ?, severity = ?, collector = ? "
+                "WHERE host = ? AND key = ?",
+                (
+                    item.value,
+                    item.label,
+                    item.severity.value,
+                    item.collector,
+                    collection.host,
+                    item.key,
+                ),
             )
             if item.kind is Kind.STATE:
                 continue

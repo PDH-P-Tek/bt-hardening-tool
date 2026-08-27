@@ -43,6 +43,12 @@ target-version = "py311"
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
 
+[tool.ruff.lint.per-file-ignores]
+# Recorded syslog and `last` output, kept exactly as a box emits it. Wrapping these to
+# satisfy a line limit would mean the parser is tested against something no box ever
+# produces, which is the whole point of using recorded output.
+"tests/test_sessions.py" = ["E501"]
+
 [tool.ruff.lint.flake8-bugbear]
 # FastAPI declares request parameters as call defaults; that is the framework's
 # idiom, not the mutable-default bug B008 exists to catch.

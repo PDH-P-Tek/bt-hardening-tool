@@ -33,12 +33,16 @@ LAST_LINE = re.compile(
     r"(?P<still>\s+still\s+(?:logged\s+in|running))?"
 )
 
-#: sshd at LogLevel VERBOSE. The fingerprint at the end is the valuable part.
+#: sshd at LogLevel VERBOSE. Matched up to the source only — the trailing part varies
+#: by key type and sshd version, and trying to describe it in one expression is how the
+#: fingerprint silently stopped being captured.
 ACCEPTED = re.compile(
     r"(?P<month>\w{3})\s+(?P<day>\d+)\s+(?P<time>\d{2}:\d{2}:\d{2}).*?"
     r"Accepted\s+(?P<method>\S+)\s+for\s+(?P<user>\S+)\s+from\s+(?P<source>\S+)"
-    r"(?:\s+port\s+\d+)?(?:\s+\S+)?(?::\s+\S+\s+(?P<fingerprint>SHA256:\S+))?"
 )
+
+#: Found separately. A fingerprint is unambiguous wherever it appears on the line.
+FINGERPRINT = re.compile(r"(SHA256:[A-Za-z0-9+/=]+)")
 
 #: Accounts that log in as part of the machine working, not as a person doing something.
 ROUTINE = frozenset({"reboot", "shutdown", "runlevel", "wtmp"})
@@ -121,12 +125,13 @@ def parse_accepted(output: str, year: int | None = None) -> tuple[Session, ...]:
             ).replace(tzinfo=UTC)
         except ValueError:
             continue
+        found = FINGERPRINT.search(line)
         out.append(
             Session(
                 user=match.group("user"),
                 source=match.group("source"),
                 started=when.isoformat(),
-                fingerprint=match.group("fingerprint") or "",
+                fingerprint=found.group(1) if found else "",
                 method=match.group("method") or "",
             )
         )
