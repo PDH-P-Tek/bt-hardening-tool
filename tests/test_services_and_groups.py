@@ -551,3 +551,75 @@ def test_clearing_the_template_is_how_you_say_it_runs_nothing() -> None:
         hosts=(Host(hostname="bare", segment_role="svrs"),),
     )
     assert firewall.all_hosts(catalogue)[0].services == ()
+
+
+# --- ISA scoring checks, including ICMP -------------------------------------
+
+
+def test_icmp_reachability_comes_from_the_host_isa_check_not_a_service() -> None:
+    """The answer to 'do I add ICMP to every host?' — no. It is the HOST scoring check.
+
+    A host is pinged by the scoring bot because it carries `HOST`, which the catalogue
+    maps to proto icmp. Ticking it emits the echo rule; ICMP is never a per-host service.
+    """
+    from pathlib import Path
+
+    from btht.app.ingest.isa import load_catalogue, required_ports
+
+    isa = load_catalogue(Path(__file__).resolve().parents[1] / "isa-checks.yaml")
+    pairs = required_ports(("HOST",), isa)
+    assert ("icmp", 0) in pairs or any(proto == "icmp" for proto, _ in pairs)
+
+
+def test_a_role_proposes_host_so_every_scored_machine_is_pingable() -> None:
+    """Every role the demo uses carries HOST, so nothing is silently unreachable."""
+    from pathlib import Path
+
+    from btht.app.ingest.isa import load_catalogue
+
+    isa = load_catalogue(Path(__file__).resolve().parents[1] / "isa-checks.yaml")
+    for role in ("windows_workstation", "domain_controller", "linux_workstation"):
+        assert "HOST" in isa.propose(role), f"{role} would not be pinged"
+
+
+def test_a_group_carries_isa_checks_onto_every_expanded_host() -> None:
+    """Ten pinged workstations are one HOST tick on the group, not ten on the hosts."""
+    from btht.app.model.estate import HostGroup
+
+    group = HostGroup(
+        name_prefix="ws1",
+        count=3,
+        host_type="windows_workstation",
+        segment_role="ws",
+        isa_checks=("HOST", "RDP"),
+    )
+    for expanded in group.expand():
+        assert expanded.isa_checks == ("HOST", "RDP")
+
+
+def test_the_host_form_offers_the_isa_checks() -> None:
+    """The gap this closes: isa_checks had no way in through the UI at all."""
+    from pathlib import Path
+
+    from btht.app.ingest.isa import load_catalogue as load_isa
+    from btht.app.model.services import load_catalogue
+    from btht.app.web.forms import host_fields
+
+    services = load_catalogue(Path(__file__).resolve().parents[1] / "service-catalogue.yaml")
+    isa = load_isa(Path(__file__).resolve().parents[1] / "isa-checks.yaml")
+    field = next(f for f in host_fields(services, isa=isa) if f["name"] == "isa_checks")
+    assert "HOST" in field["checkboxes"]
+
+
+def test_picking_a_template_proposes_its_scoring_checks() -> None:
+    """So a workstation is pingable the moment its template is chosen."""
+    from pathlib import Path
+
+    from btht.app.ingest.isa import load_catalogue as load_isa
+    from btht.app.model.services import load_catalogue
+    from btht.app.web.forms import host_fields
+
+    services = load_catalogue(Path(__file__).resolve().parents[1] / "service-catalogue.yaml")
+    isa = load_isa(Path(__file__).resolve().parents[1] / "isa-checks.yaml")
+    field = next(f for f in host_fields(services, isa=isa) if f["name"] == "host_type")
+    assert "HOST" in field["fills"]["windows_workstation"]["isa_checks"]

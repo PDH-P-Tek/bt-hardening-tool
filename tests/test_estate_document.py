@@ -179,3 +179,38 @@ def test_poll_interval_below_the_floor_is_refused(tmp_path: Path) -> None:
     )
     with pytest.raises(ValueError, match="30s floor"):
         load_estate(path)
+
+
+def test_group_isa_checks_survive_a_save_and_load(tmp_path: Path) -> None:
+    """They were dropped by the serializer, so a scored workstation group came back
+    unscored — every ICMP HOST rule for those ten machines silently gone."""
+    from btht.app.model.estate import Estate, Firewall, HostGroup, Node, Platform
+    from btht.app.model.policy import load_estate, save_estate
+
+    estate = Estate(
+        team=42,
+        firewalls=(
+            Firewall(
+                enclave="do",
+                fqdn="do.example",
+                node=Node(
+                    name="do",
+                    platform=Platform.PFSENSE,
+                    mgmt_address=__import__("ipaddress").ip_address("10.0.0.1"),
+                ),
+                host_groups=(
+                    HostGroup(
+                        name_prefix="ws1",
+                        count=10,
+                        host_type="windows_workstation",
+                        segment_role="ws",
+                        isa_checks=("HOST", "RDP"),
+                    ),
+                ),
+            ),
+        ),
+    )
+    path = tmp_path / "range.yaml"
+    save_estate(estate, path)
+    reloaded = load_estate(path)
+    assert reloaded.firewalls[0].host_groups[0].isa_checks == ("HOST", "RDP")

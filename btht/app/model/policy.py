@@ -96,6 +96,7 @@ def _host_group(data: dict[str, Any]) -> HostGroup:
         v6_start=ip_address(str(v6)) if v6 else None,  # type: ignore[arg-type]
         v6_prefix=str(data.get("v6_prefix", "")),
         services=tuple(str(s) for s in data.get("services", ()) or ()),
+        isa_checks=tuple(str(c) for c in data.get("isa_checks", ()) or ()),
         out_of_bounds=bool(data.get("out_of_bounds", False)),
         note=str(data.get("note", "")).strip(),
     )
@@ -233,6 +234,8 @@ def _group_out(group: HostGroup) -> dict[str, Any]:
         out["v6_prefix"] = group.v6_prefix
     if group.services:
         out["services"] = list(group.services)
+    if group.isa_checks:
+        out["isa_checks"] = list(group.isa_checks)
     if group.out_of_bounds:
         out["out_of_bounds"] = True
     if group.note:

@@ -198,6 +198,7 @@ def _range_page(
     """
     estate = load_estate(path)
     catalogue = load_services(SERVICE_CATALOGUE)
+    isa = load_catalogue(ISA_CHECKS if ISA_CHECKS.exists() else None)
     params = request.query_params
     enclave = params.get("enclave", "")
     ifname = params.get("interface", "")
@@ -237,14 +238,20 @@ def _range_page(
         new_enclave_fields=forms.enclave_fields([p.value for p in Platform]),
         new_router_fields=forms.router_fields(),
         new_interface_fields=forms.interface_fields(estate),
-        new_host_fields=forms.host_fields(catalogue, segment=interface.role if interface else ""),
-        new_group_fields=forms.group_fields(catalogue, segment=interface.role if interface else ""),
+        new_host_fields=forms.host_fields(
+            catalogue, segment=interface.role if interface else "", isa=isa
+        ),
+        new_group_fields=forms.group_fields(
+            catalogue, segment=interface.role if interface else "", isa=isa
+        ),
         edit_interface_fields={
             i.ifname: forms.interface_fields(estate, i)
             for i in (firewall.interfaces if firewall else ())
         },
-        edit_host_fields={h.hostname: forms.host_fields(catalogue, h) for h in hosts},
-        edit_group_fields={g.name_prefix: forms.group_fields(catalogue, g) for g in groups},
+        edit_host_fields={h.hostname: forms.host_fields(catalogue, h, isa=isa) for h in hosts},
+        edit_group_fields={
+            g.name_prefix: forms.group_fields(catalogue, g, isa=isa) for g in groups
+        },
         # What each machine actually runs, resolved once here so the table cannot
         # disagree with the edit form or with the rules that get generated.
         host_services={
@@ -1544,6 +1551,7 @@ def edit_host_form(request: Request, enclave: str, hostname: str) -> HTMLRespons
     if host is None:
         return _range_page(request, path, [("err", f"no host {hostname}")])
     catalogue = load_services(SERVICE_CATALOGUE)
+    isa = load_catalogue(ISA_CHECKS if ISA_CHECKS.exists() else None)
     return render(
         request,
         "edit.html",
@@ -1551,7 +1559,7 @@ def edit_host_form(request: Request, enclave: str, hostname: str) -> HTMLRespons
         title=f"{enclave} · host {hostname}",
         action=f"/range/edit/host/{enclave}/{hostname}",
         delete_action=f"/range/delete/host/{enclave}/{hostname}",
-        fields=forms.host_fields(catalogue, host),
+        fields=forms.host_fields(catalogue, host, isa=isa),
     )
 
 
@@ -1564,8 +1572,9 @@ def edit_host(
     v4: str = Form(""),
     v6: str = Form(""),
     segment_role: str = Form(""),
-    service_role: str = Form(""),
+    service_role: str = Form("", alias="host_type"),
     services: list[str] = Form(default=[]),
+    isa_checks: list[str] = Form(default=[]),
     out_of_bounds: str = Form(""),
 ) -> RedirectResponse:
     path = estate_path()
@@ -1581,6 +1590,7 @@ def edit_host(
         "segment_role": segment_role.strip(),
         "service_role": service_role.strip(),
         "services": tuple(s for s in services if s),
+        "isa_checks": tuple(c for c in isa_checks if c),
         "out_of_bounds": out_of_bounds == "yes",
     }
     if renamed != hostname:
@@ -1610,6 +1620,7 @@ def edit_group_form(request: Request, enclave: str, prefix: str) -> HTMLResponse
     if group is None:
         return _range_page(request, path, [("err", f"no group {prefix}")])
     catalogue = load_services(SERVICE_CATALOGUE)
+    isa = load_catalogue(ISA_CHECKS if ISA_CHECKS.exists() else None)
     return render(
         request,
         "edit.html",
@@ -1618,7 +1629,7 @@ def edit_group_form(request: Request, enclave: str, prefix: str) -> HTMLResponse
         action=f"/range/edit/group/{enclave}/{prefix}",
         delete_action=f"/range/delete/group/{enclave}/{prefix}",
         delete_warning=f"This removes all {group.count} machines in the group.",
-        fields=forms.group_fields(catalogue, group),
+        fields=forms.group_fields(catalogue, group, isa=isa),
     )
 
 
@@ -1635,7 +1646,8 @@ def edit_group(
     segment_role: str = Form(""),
     v4_start: str = Form(""),
     v6_start: str = Form(""),
-    services: str = Form(""),
+    services: list[str] = Form(default=[]),
+    isa_checks: list[str] = Form(default=[]),
 ) -> RedirectResponse:
     path = estate_path()
     try:
@@ -1652,7 +1664,8 @@ def edit_group(
             segment_role=segment_role.strip(),
             v4_start=_addresses(v4_start=v4_start)["v4_start"],
             v6_start=_addresses(v6_start=v6_start)["v6_start"],
-            services=_split(services),
+            services=tuple(s for s in services if s),
+            isa_checks=tuple(c for c in isa_checks if c),
         )
     except (ValueError, BadAddress) as exc:
         return _back(str(exc), "err")
@@ -2024,6 +2037,7 @@ def add_host(
     segment_role: str = Form(""),
     host_type: str = Form(""),
     services: list[str] = Form(default=[]),
+    isa_checks: list[str] = Form(default=[]),
     out_of_bounds: str = Form(""),
     ifname: str = Form(""),
 ) -> RedirectResponse:
@@ -2048,6 +2062,7 @@ def add_host(
         segment_role=segment_role.strip(),
         service_role=host_type.strip(),
         services=chosen,
+        isa_checks=tuple(c for c in isa_checks if c),
         out_of_bounds=out_of_bounds == "yes",
         source_of_truth=SourceOfTruth.WIZARD,
     )
@@ -2073,6 +2088,7 @@ def add_group(
     host_type: str = Form(""),
     segment_role: str = Form(""),
     services: list[str] = Form(default=[]),
+    isa_checks: list[str] = Form(default=[]),
     v4_start: str = Form(""),
     v6_prefix: str = Form(""),
     ifname: str = Form(""),
@@ -2098,6 +2114,7 @@ def add_group(
             host_type=host_type.strip(),
             segment_role=segment_role.strip(),
             services=chosen,
+            isa_checks=tuple(c for c in isa_checks if c),
             v4_start=_addresses(v4_start=v4_start)["v4_start"],
             v6_prefix=v6_prefix.strip(),
         )

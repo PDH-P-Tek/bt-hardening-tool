@@ -511,3 +511,70 @@ def test_services_ticked_when_adding_a_group_are_kept(client: TestClient, tmp_pa
     estate = load_estate(tmp_path / "estates" / "range.yaml")
     group = estate.firewalls[0].host_groups[0]
     assert group.services == ("SSH",)
+
+
+def test_isa_checks_ticked_when_adding_a_host_are_kept(client: TestClient, tmp_path: Path) -> None:
+    """They had no way in through the UI at all — a scored host could not be declared."""
+    make_estate(client)
+    client.post(
+        "/range/enclaves",
+        data={"name": "alpha", "platform": "pfsense", "mgmt_address": "10.0.0.1"},
+        follow_redirects=False,
+    )
+    client.post(
+        "/range/enclaves/alpha/interfaces",
+        data={"ifname": "opt1", "role": "svrs", "v4": "192.0.2.1/24"},
+        follow_redirects=False,
+    )
+    client.post(
+        "/range/enclaves/alpha/hosts",
+        data={
+            "hostname": "dc01",
+            "segment_role": "svrs",
+            "v4": "192.0.2.5",
+            "isa_checks": ["HOST", "RDP"],
+        },
+        follow_redirects=False,
+    )
+    estate = load_estate(tmp_path / "estates" / "range.yaml")
+    host = estate.firewalls[0].hosts[0]
+    assert host.isa_checks == ("HOST", "RDP")
+
+
+def test_editing_a_host_keeps_its_template(client: TestClient, tmp_path: Path) -> None:
+    """The form field is host_type; the edit route read service_role, so every edit
+    silently wiped the template."""
+    make_estate(client)
+    client.post(
+        "/range/enclaves",
+        data={"name": "alpha", "platform": "pfsense", "mgmt_address": "10.0.0.1"},
+        follow_redirects=False,
+    )
+    client.post(
+        "/range/enclaves/alpha/interfaces",
+        data={"ifname": "opt1", "role": "svrs", "v4": "192.0.2.1/24"},
+        follow_redirects=False,
+    )
+    client.post(
+        "/range/enclaves/alpha/hosts",
+        data={
+            "hostname": "dc01",
+            "segment_role": "svrs",
+            "v4": "192.0.2.5",
+            "host_type": "domain_controller",
+        },
+        follow_redirects=False,
+    )
+    client.post(
+        "/range/edit/host/alpha/dc01",
+        data={
+            "hostname": "dc01",
+            "segment_role": "svrs",
+            "v4": "192.0.2.5",
+            "host_type": "domain_controller",
+            "os": "Windows Server 2022",
+        },
+        follow_redirects=False,
+    )
+    host = load_estate(tmp_path / "estates" / "range.yaml").firewalls[0].hosts[0]
+    assert host.service_role == "domain_controller", "the template must survive an edit"

@@ -337,6 +337,11 @@ class HostGroup:
     services: tuple[str, ...] = ()
     """Overrides the host type's services when set. Empty means use the type's."""
 
+    isa_checks: tuple[str, ...] = ()
+    """Scoring checks every machine in the group carries, in the ISA board's own names.
+    `HOST` is the ICMP-reachability check, so a group the scoring bot pings carries it
+    here, once on the group, rather than typed onto each expanded host."""
+
     out_of_bounds: bool = False
     note: str = ""
 
@@ -387,6 +392,7 @@ class HostGroup:
                     v6=v6,
                     segment_role=self.segment_role,
                     service_role=self.host_type,
+                    isa_checks=self.isa_checks,
                     group=self.name_prefix,
                     out_of_bounds=self.out_of_bounds,
                     source_of_truth=SourceOfTruth.WIZARD,

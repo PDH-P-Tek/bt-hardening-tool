@@ -23,17 +23,48 @@ from __future__ import annotations
 
 from typing import Any
 
+from btht.app.ingest.isa import Catalogue as IsaCatalogue
 from btht.app.model.estate import Estate, Firewall, Host, HostGroup, Interface, Node
 from btht.app.model.services import Catalogue, HostType, Service, services_for
 
 Field = dict[str, Any]
 
 
-def _template_fills(catalogue: Catalogue) -> dict[str, dict[str, Any]]:
-    """What each host template should put in the rest of the form."""
+def _template_fills(
+    catalogue: Catalogue, isa: IsaCatalogue | None = None
+) -> dict[str, dict[str, Any]]:
+    """What each host template should put in the rest of the form.
+
+    Includes the ISA scoring checks the role usually carries, so picking a template
+    proposes them the same way it proposes services — `HOST` (the ICMP-reachability
+    check) among them for anything the scoring bot pings.
+    """
     return {
-        name: {"os": kind.default_os, "services": list(kind.services)}
+        name: {
+            "os": kind.default_os,
+            "services": list(kind.services),
+            "isa_checks": list(isa.propose(name)) if isa is not None else [],
+        }
         for name, kind in catalogue.host_types.items()
+    }
+
+
+def _isa_field(
+    name: str, value: list[str], isa: IsaCatalogue | None
+) -> Field:
+    """The scoring-check tick list. This is what makes a host reachable to the board —
+    including ICMP, which is the `HOST` check and not a service you add by hand."""
+    options = sorted(isa.checks) if isa is not None else []
+    return {
+        "name": name,
+        "label": "Scoring checks (ISA board)",
+        "value": value,
+        "checkboxes": options,
+        "hint": "What the ISA board tests on this machine. HOST is the ICMP ping — tick "
+        "it for anything the scoring bot must see as up. Each ticked check emits a "
+        "non-removable scoring rule."
+        if options
+        else "No ISA catalogue loaded, so no scoring checks can be assigned.",
     }
 
 
@@ -104,6 +135,7 @@ def host_fields(
     catalogue: Catalogue,
     host: Host | None = None,
     segment: str = "",
+    isa: IsaCatalogue | None = None,
 ) -> list[Field]:
     """`host` is None when adding, which changes two things.
 
@@ -121,9 +153,10 @@ def host_fields(
             "label": "What kind of machine is this?",
             "value": host.service_role if host else "",
             "options": _template_options(catalogue),
-            "fills": _template_fills(catalogue),
-            "hint": "Picking one fills in the operating system and ticks what it runs. "
-            "Change anything you like afterwards — the template is a starting point.",
+            "fills": _template_fills(catalogue, isa),
+            "hint": "Picking one fills in the operating system and ticks what it runs, "
+            "and proposes its scoring checks. Change anything afterwards — the template "
+            "is a starting point.",
         },
         _text(
             "os",
@@ -150,6 +183,7 @@ def host_fields(
             "checkboxes": sorted(catalogue.services),
             "hint": "Ports come from the service catalogue, so you pick RDP, not 3389.",
         },
+        _isa_field("isa_checks", list(host.isa_checks) if host else [], isa),
         {
             "name": "out_of_bounds",
             "label": "Out of bounds",
@@ -161,7 +195,10 @@ def host_fields(
 
 
 def group_fields(
-    catalogue: Catalogue, group: HostGroup | None = None, segment: str = ""
+    catalogue: Catalogue,
+    group: HostGroup | None = None,
+    segment: str = "",
+    isa: IsaCatalogue | None = None,
 ) -> list[Field]:
     return [
         _text(
@@ -179,8 +216,9 @@ def group_fields(
             "label": "What kind of machine are these?",
             "value": group.host_type if group else "",
             "options": _template_options(catalogue),
-            "fills": _template_fills(catalogue),
-            "hint": "Picking one fills in the operating system and ticks what they run.",
+            "fills": _template_fills(catalogue, isa),
+            "hint": "Picking one fills in the operating system, ticks what they run and "
+            "proposes their scoring checks.",
         },
         _text("os", "Operating system", group.os if group else "", placeholder="Windows 10 22H2"),
         {
@@ -212,6 +250,7 @@ def group_fields(
             "checkboxes": sorted(catalogue.services),
             "hint": "Ports come from the service catalogue, so you pick RDP, not 3389.",
         },
+        _isa_field("isa_checks", list(group.isa_checks) if group else [], isa),
     ]
 
 

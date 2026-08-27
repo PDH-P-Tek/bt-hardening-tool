@@ -13,7 +13,8 @@ from __future__ import annotations
 
 from ipaddress import IPv4Address, IPv4Interface, IPv6Interface, ip_network
 
-from btht.app.data import ESTATES, SERVICE_CATALOGUE
+from btht.app.data import ESTATES, ISA_CHECKS, SERVICE_CATALOGUE
+from btht.app.ingest.isa import load_catalogue as load_isa
 from btht.app.ingest.roles import SideRule
 from btht.app.model.estate import (
     Estate,
@@ -53,6 +54,12 @@ def interface(ifname: str, role: str, third: int, host: int, *, is_lan: bool = F
     )
 
 
+#: The ISA board proposes a check set per role — HOST (the ICMP ping) among them for
+#: everything the scoring bot must see as up. Assigning it here is what makes the demo
+#: actually generate scoring rules, which is the whole point of the exercise.
+ISA = load_isa(ISA_CHECKS)
+
+
 def host(name: str, os_name: str, third: int, last: int, segment: str, host_type: str) -> Host:
     """One named machine, addressed the way the diagram addresses it."""
     from ipaddress import IPv6Address
@@ -64,6 +71,7 @@ def host(name: str, os_name: str, third: int, last: int, segment: str, host_type
         v6=IPv6Address(f"{V6}:{third}::{last}"),
         segment_role=segment,
         service_role=host_type,
+        isa_checks=ISA.propose(host_type),
         source_of_truth=SourceOfTruth.ANNEX,
     )
 
@@ -79,6 +87,7 @@ def workstations(
         segment_role="ws",
         host_type=host_type,
         os=os_name,
+        isa_checks=ISA.propose(host_type),
         v4_start=IPv4Address(f"25.{TEAM}.{third}.{start}"),
         v6_prefix=f"{V6}:{third}",
     )
