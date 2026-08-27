@@ -463,3 +463,91 @@ def test_editing_a_templated_group_opens_with_its_services_ticked() -> None:
     group = HostGroup(name_prefix="ws1", count=10, host_type=kind.name, segment_role="ws")
     field = next(f for f in group_fields(catalogue, group) if f["name"] == "services")
     assert field["value"] == list(kind.services)
+
+
+def test_what_the_screen_shows_is_what_the_rules_use() -> None:
+    """The invariant this kept failing on, asserted directly.
+
+    Groups resolved an empty service list to their template and single hosts did not,
+    so `dc01` — a declared domain controller with no services of its own — displayed
+    nine services on every screen and generated rules for none of them. A tool that
+    shows one thing and does another is worse than one that does neither.
+
+    Whichever way the ambiguity is settled, both paths have to settle it identically.
+    Empty means "whatever the template says"; to say a machine runs nothing, clear its
+    template too.
+    """
+    from ipaddress import IPv4Address
+
+    from btht.app.model.estate import Firewall, Host, HostGroup, Node, Platform
+    from btht.app.model.services import Catalogue, HostType, Service, services_for
+
+    catalogue = Catalogue(
+        services={n: Service(name=n) for n in ("RDP", "SSH", "SMB")},
+        host_types={
+            "workstation": HostType(name="workstation", services=("RDP",)),
+            "server": HostType(name="server", services=("SSH", "SMB")),
+        },
+    )
+    firewall = Firewall(
+        enclave="do",
+        fqdn="do.example",
+        node=Node(name="do", platform=Platform.PFSENSE, mgmt_address=IPv4Address("10.0.0.1")),
+        hosts=(
+            # follows its template
+            Host(hostname="a", service_role="server", segment_role="svrs"),
+            # overridden away from it
+            Host(hostname="b", service_role="server", services=("RDP",), segment_role="svrs"),
+            # no template at all
+            Host(hostname="c", segment_role="svrs"),
+        ),
+        host_groups=(
+            HostGroup(name_prefix="ws", count=2, host_type="workstation", segment_role="ws"),
+            HostGroup(
+                name_prefix="kiosk",
+                count=1,
+                host_type="workstation",
+                services=("SSH",),
+                segment_role="ws",
+            ),
+        ),
+    )
+
+    for host in firewall.all_hosts(catalogue):
+        declared = next(
+            (h for h in firewall.hosts if h.hostname == host.hostname),
+            None,
+        )
+        group = next((g for g in firewall.host_groups if g.name_prefix == host.group), None)
+        shown = (
+            services_for(catalogue, declared.service_role, declared.services)
+            if declared is not None
+            else services_for(catalogue, group.host_type, group.services)  # type: ignore[union-attr]
+        )
+        assert tuple(shown) == tuple(host.services), f"{host.hostname} disagrees"
+
+    resolved = {h.hostname: h.services for h in firewall.all_hosts(catalogue)}
+    assert resolved["a"] == ("SSH", "SMB"), "follows the template"
+    assert resolved["b"] == ("RDP",), "a manual change wins over the template"
+    assert resolved["c"] == (), "no template, nothing assumed"
+    assert resolved["ws01"] == ("RDP",)
+    assert resolved["kiosk01"] == ("SSH",), "an override on a group wins too"
+
+
+def test_clearing_the_template_is_how_you_say_it_runs_nothing() -> None:
+    from ipaddress import IPv4Address
+
+    from btht.app.model.estate import Firewall, Host, Node, Platform
+    from btht.app.model.services import Catalogue, HostType, Service
+
+    catalogue = Catalogue(
+        services={"SSH": Service(name="SSH")},
+        host_types={"server": HostType(name="server", services=("SSH",))},
+    )
+    firewall = Firewall(
+        enclave="do",
+        fqdn="do.example",
+        node=Node(name="do", platform=Platform.PFSENSE, mgmt_address=IPv4Address("10.0.0.1")),
+        hosts=(Host(hostname="bare", segment_role="svrs"),),
+    )
+    assert firewall.all_hosts(catalogue)[0].services == ()

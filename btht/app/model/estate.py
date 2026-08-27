@@ -21,7 +21,7 @@ carries the *name* of a credential, never the credential.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from ipaddress import IPv4Address, IPv4Interface, IPv6Address, IPv6Interface
 
@@ -169,20 +169,45 @@ class Firewall:
     """Binds generated output to one firewall identity. A mismatched import is
     refused, not warned — `SPEC.md` §7.4."""
 
+    def _template_services(self, catalogue: object, host_type: str) -> tuple[str, ...]:
+        """What a template says a machine runs. Empty when there is no template.
+
+        `catalogue` is loosely typed on purpose: the estate model is read by the
+        generator, the monitor and the topology alike, and none of them should have to
+        carry a service catalogue just to list hosts.
+        """
+        if catalogue is None or not host_type:
+            return ()
+        kind = getattr(catalogue, "host_types", {}).get(host_type)
+        return tuple(kind.services) if kind is not None else ()
+
     def all_hosts(self, catalogue: object = None) -> tuple[Host, ...]:
         """Individually declared hosts plus every host expanded from a group.
 
         Everything downstream reads this rather than `hosts`, so a machine declared in
         a group of ten is as real as one typed in alone.
+
+        **An empty service list means "whatever the template says", for a single
+        machine exactly as for a group.** Groups already worked that way and the rules
+        relied on it; individually declared hosts did not, so a host carrying a template
+        and no services of its own generated no service rules at all while every screen
+        showed the template's set. Whichever way that inconsistency is resolved, it has
+        to be resolved in one place — this is it. To say a machine runs nothing, clear
+        its template as well.
         """
-        expanded: list[Host] = list(self.hosts)
+        expanded: list[Host] = [
+            host
+            if host.services
+            else replace(
+                host,
+                services=self._template_services(catalogue, host.service_role),
+            )
+            for host in self.hosts
+        ]
         for group in self.host_groups:
-            services: tuple[str, ...] = ()
-            if catalogue is not None and group.host_type:
-                host_type = getattr(catalogue, "host_types", {}).get(group.host_type)
-                if host_type is not None:
-                    services = tuple(host_type.services)
-            expanded.extend(group.expand(services))
+            expanded.extend(
+                group.expand(self._template_services(catalogue, group.host_type))
+            )
         return tuple(expanded)
 
     def interface_by_role(self, role: str) -> Interface | None:
