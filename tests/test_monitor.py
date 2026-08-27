@@ -779,3 +779,66 @@ def test_implant_checks_fail_on_the_observed_chain() -> None:
     results = {c.id: c.result for c in check_implant(items)}
     for check in ("H-IMP-01", "H-IMP-02", "H-IMP-03", "H-IMP-04"):
         assert results[check] is Result.FAIL, f"{check} should have fired"
+
+
+# --- NoSense surface: web shells, GUI port, SSH toggle ----------------------
+
+
+def test_a_new_php_in_the_web_root_is_a_critical_webshell_candidate() -> None:
+    """NoSense uploads web shells into /usr/local/www — `MONITORING.md` M-FS-08.
+
+    A web shell needs no credentials to use once in place, which is the whole point of
+    it as a fallback for when keys are removed.
+    """
+    from btht.app.monitor.adapters.pfsense import _web_root
+
+    items = _web_root("/usr/local/www/shell.php\n/usr/local/www/status.php\n")
+    assert len(items) == 2
+    assert all(i.severity is Severity.CRITICAL for i in items)
+    assert all(i.collector == "M-FS-08" for i in items)
+
+
+def test_the_gui_port_and_ssh_state_are_collected() -> None:
+    """Changing the GUI port and toggling SSH on are both NoSense moves, and both are
+    single values in config.xml — the tool reports the value moved, not an opinion."""
+    import xml.etree.ElementTree as ET
+
+    from btht.app.monitor.adapters.pfsense import _gui_and_ssh
+
+    xml = (
+        "<pfsense><system>"
+        "<webgui><protocol>https</protocol><port>8080</port></webgui>"
+        "<ssh><enable></enable></ssh>"
+        "</system></pfsense>"
+    )
+    items = {i.key: i.value for i in _gui_and_ssh(ET.fromstring(xml))}
+    assert "8080" in items["pf:webgui"]
+    assert items["pf:sshd"] == "enabled"
+
+
+def test_ssh_disabled_is_the_absence_of_the_enable_element() -> None:
+    """The backwards pfSense boolean: no <enable/> means off, not missing data."""
+    import xml.etree.ElementTree as ET
+
+    from btht.app.monitor.adapters.pfsense import _gui_and_ssh
+
+    xml = "<pfsense><system><ssh></ssh></system></pfsense>"
+    items = {i.key: i.value for i in _gui_and_ssh(ET.fromstring(xml))}
+    assert items["pf:sshd"] == "disabled"
+
+
+def test_a_rule_records_its_source_and_destination() -> None:
+    """Without the endpoints in the value, a source-widening (E7) and an any→any rule
+    are both invisible to the diff and to the H-PF-02 check."""
+    from btht.app.monitor.adapters.pfsense import _rules
+
+    xml = (
+        "<pfsense><filter><rule><type>pass</type><interface>wan</interface>"
+        "<ipprotocol>inet46</ipprotocol><floating>yes</floating>"
+        "<source><any></any></source><destination><any></any></destination>"
+        "<descr>RT any any</descr></rule></filter></pfsense>"
+    )
+    rule = next(i for i in _rules(xml) if i.collector == "M-FW-01")
+    assert "src=any" in rule.value
+    assert "dst=any" in rule.value
+    assert "floating=True" in rule.value

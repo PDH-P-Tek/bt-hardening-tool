@@ -36,6 +36,17 @@ CONFIG_PREFIXES = (
     "line vty",
     "interface ",
     "log ",
+    # The OSPF-backdoor surface. Without `passive-interface default` the router tries to
+    # form an adjacency on every attached segment, and a crafted OSPF packet from that
+    # segment is enough — so whether these lines are present is exactly what H-FRR-04/05
+    # need to read. They were not collected, so the checks had nothing to judge.
+    "passive-interface",
+    "no passive-interface",
+    "ip ospf ",
+    "ospf ",
+    "area ",
+    "redistribute ",
+    "distribute-list ",
 )
 
 
@@ -50,7 +61,9 @@ def _running_config(output: str) -> list[Item]:
             continue
         severity = (
             Severity.CRITICAL
-            if entry.startswith(("username ", "line vty", "access-list "))
+            if entry.startswith(
+                ("username ", "line vty", "access-list ", "redistribute ", "no passive-interface")
+            )
             else Severity.HIGH
         )
         items.append(

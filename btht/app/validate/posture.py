@@ -207,6 +207,92 @@ def check_firewall(items: Iterable[Item]) -> list[Check]:
     return out
 
 
+def check_pfsense(items: Iterable[Item]) -> list[Check]:
+    """`H-PF-*` — pfSense rule-tampering that the GUI hides or the operator misreads.
+
+    Two attacks the config-diff alone reads awkwardly:
+
+    - `pfctl -d` disables every rule and **does not show in the web interface**. The
+      saved config is untouched, so a person reading Firewall > Rules sees their work
+      intact while pf enforces nothing. The tell is the split: many rules configured,
+      almost none loaded. We collect both halves precisely so this is visible.
+    - A floating **pass from any to any** overrides every crafted block rule beneath it,
+      and Blue Teams who do not know pfSense well add block rules under it and wonder why
+      nothing works — `EVIDENCE.md` E1. Red Team adds one on purpose.
+    """
+    checks: list[Check] = []
+
+    configured = [i for i in items if i.collector == "M-FW-01" and "disabled=False" in i.value]
+    live = next((i for i in items if i.collector == "M-FW-06"), None)
+    if live is None or not configured:
+        checks.append(
+            Check(
+                "H-PF-01",
+                "Firewall is enforcing its rules",
+                Result.UNKNOWN,
+                "The live ruleset or the configured rules were not collected.",
+                "Add the pfSense collector for this box.",
+                scoring_risk="none",
+            )
+        )
+    else:
+        try:
+            loaded = int(live.value)
+        except ValueError:
+            loaded = -1
+        # pf loads scrub, anti-lockout and defaults on top of the visible rules, so the
+        # live count is normally *higher* than the configured count. A live count that
+        # has collapsed below it is the signal — pf is enforcing almost nothing.
+        disabled = loaded >= 0 and loaded < len(configured)
+        checks.append(
+            Check(
+                "H-PF-01",
+                "Firewall is enforcing its rules",
+                Result.FAIL if disabled else Result.PASS,
+                f"{len(configured)} rules configured, {loaded} loaded in pf"
+                + (" — pf appears to be disabled (pfctl -d)" if disabled else ""),
+                "Run `pfctl -e` to re-enable, then `pfctl -sr` to confirm the count "
+                "recovers. `pfctl -d` leaves the saved config intact, so the web "
+                "interface will have looked correct the whole time. Find out how they "
+                "reached the CLI before re-enabling — the access route is still open.",
+                scoring_risk="none",
+            )
+        )
+
+    anyany = [
+        i
+        for i in items
+        if i.collector == "M-FW-01"
+        and i.value.startswith("pass ")
+        and "src=any" in i.value
+        and "dst=any" in i.value
+        and "disabled=False" in i.value
+    ]
+    floating_anyany = [i for i in anyany if "floating=True" in i.value]
+    checks.append(
+        Check(
+            "H-PF-02",
+            "No pass-any-to-any rule is shadowing the ruleset",
+            Result.FAIL if anyany else Result.PASS,
+            (
+                "; ".join(i.label for i in anyany)
+                + (
+                    " — a floating any→any overrides every rule below it"
+                    if floating_anyany
+                    else ""
+                )
+            )
+            or "none",
+            "Remove it. A floating pass-any-any makes every block rule beneath it "
+            "irrelevant, which is exactly why it gets added — and why a ruleset can read "
+            "as correct while enforcing nothing. Check the Floating tab specifically; it "
+            "is the one Blue Teams look at last.",
+            scoring_risk="none",
+        )
+    )
+    return checks
+
+
 def check_routing(items: Iterable[Item]) -> list[Check]:
     """`H-FRR-*`. Scoping depends on `HARDENING.md` H-Q2, which is still open."""
     logins = [i for i in items if i.collector == "M-RT-01" and i.value.startswith("username ")]
@@ -221,7 +307,10 @@ def check_routing(items: Iterable[Item]) -> list[Check]:
                 "Add the FRR collector for this host.",
             )
         ]
-    return [
+    config = [i for i in items if i.collector in ("M-RT-01",)]
+    config_text = "\n".join(i.value for i in config)
+
+    checks = [
         Check(
             "H-FRR-02",
             "Router logins require a password",
@@ -232,6 +321,56 @@ def check_routing(items: Iterable[Item]) -> list[Check]:
             scoring_risk="medium",
         )
     ]
+
+    # H-FRR-04 — the load-bearing OSPF-backdoor defence. Without `passive-interface
+    # default` the router advertises on every attached segment and will form an
+    # adjacency with anything that answers, including a crafted OSPF packet from a
+    # foothold on that segment. That adjacency is the whole delivery mechanism.
+    has_passive_default = "passive-interface default" in config_text
+    ospf_configured = any("router ospf" in i.value for i in config)
+    if ospf_configured:
+        checks.append(
+            Check(
+                "H-FRR-04",
+                "OSPF does not offer adjacency on every interface",
+                Result.PASS if has_passive_default else Result.FAIL,
+                "passive-interface default is set"
+                if has_passive_default
+                else "passive-interface default is NOT set — the router will attempt an "
+                "adjacency on every attached segment",
+                "Set `passive-interface default` and then `no passive-interface` only on "
+                "the links that genuinely peer. This is the single line that stops a "
+                "foothold on any attached segment becoming a routing peer — and OSPF "
+                "adjacency is how the OSPF backdoor delivers its payload.",
+                scoring_risk="low",
+            )
+        )
+
+        # H-FRR-05 — even where an adjacency is meant to form, authentication stops an
+        # unauthenticated packet being accepted as a neighbour.
+        has_auth = (
+            "ospf authentication message-digest" in config_text
+            or "ip ospf message-digest-key" in config_text
+            or "ip ospf authentication" in config_text
+        )
+        checks.append(
+            Check(
+                "H-FRR-05",
+                "OSPF adjacencies are authenticated",
+                Result.PASS if has_auth else Result.FAIL,
+                "OSPF authentication is configured"
+                if has_auth
+                else "no OSPF authentication found — any packet on a peering segment can "
+                "form an adjacency",
+                "Enable message-digest authentication on every OSPF interface and area. "
+                "With H-FRR-04 it closes the adjacency path completely; the control-plane "
+                "nftables ruleset the tool generates is the third layer, restricting OSPF "
+                "to declared neighbour addresses.",
+                scoring_risk="low",
+            )
+        )
+
+    return checks
 
 
 def check_implant(items: Iterable[Item]) -> list[Check]:
@@ -325,6 +464,21 @@ def check_implant(items: Iterable[Item]) -> list[Check]:
         )
     )
 
+    webshells = _by_collector(collected, "M-FS-08")
+    checks.append(
+        Check(
+            id="H-IMP-06",
+            title="No unexpected PHP in the firewall web root",
+            result=Result.FAIL if webshells else Result.PASS,
+            detail="; ".join(i.value for i in webshells) or "none",
+            remediation="A .php in /usr/local/www that is not part of pfSense is a web "
+            "shell — NoSense's fallback for when its keys are removed, and it needs no "
+            "credentials to use once uploaded. Remove the file, then find how it was "
+            "written: a web shell arrives over valid credentials or an existing shell.",
+            scoring_risk="none",
+        )
+    )
+
     listeners = _by_collector(collected, "M-SVC-01")
     checks.append(
         Check(
@@ -343,7 +497,8 @@ def check_implant(items: Iterable[Item]) -> list[Check]:
 
     # An implant check that passes because nothing was collected is worse than none.
     if not any(
-        i.collector in ("M-BOOT-02", "M-BOOT-03", "M-SVC-05", "M-SVC-06", "M-SCHED-01")
+        i.collector
+        in ("M-BOOT-02", "M-BOOT-03", "M-SVC-05", "M-SVC-06", "M-SCHED-01", "M-FS-08")
         for i in collected
     ):
         checks = [
@@ -363,7 +518,14 @@ def run_posture(items: Iterable[Item]) -> tuple[Check, ...]:
     """Every check, over one collected item set. Ordered by ID for stable output."""
     collected = list(items)
     checks: list[Check] = []
-    for group in (check_ssh, check_accounts, check_firewall, check_routing, check_implant):
+    for group in (
+        check_ssh,
+        check_accounts,
+        check_firewall,
+        check_pfsense,
+        check_routing,
+        check_implant,
+    ):
         checks.extend(group(collected))
     return tuple(sorted(checks, key=lambda c: c.id))
 

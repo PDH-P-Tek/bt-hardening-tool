@@ -28,6 +28,10 @@ COMMANDS = {
     "M-FW-CONFIG": "cat /conf/config.xml",
     "M-FW-06": "pfctl -sr",
     "M-SVC-01": "sockstat -4l",
+    # NoSense uploads web shells into the GUI's own document root. pfSense ships a fixed
+    # set of PHP there, so any .php that is not part of the platform is either a shell or
+    # a very good question. `find` attributes each hit to its path and needs no pipeline.
+    "M-FS-08": "find /usr/local/www -name '*.php' -newer /etc/version -type f",
 }
 
 #: The only elements this adapter reads beyond the three the generator parses.
@@ -145,8 +149,17 @@ def _rules(config_xml: str) -> list[Item]:
     parsed = parse_string(config_xml)
     items: list[Item] = []
 
+    from btht.app.generate.emit import endpoint_text
+
     for index, rule in enumerate(parsed.rules):
         identity = rule.tracker or f"position:{index}"
+        # Source and destination are recorded now, for two reasons. The diff needs them
+        # — a rule whose source was widened while its description was kept is `EVIDENCE`
+        # E7, and without the endpoints in the value that change is invisible. And the
+        # any→any check below reads them: a floating pass from any to any is the
+        # pfSense-specific override that makes every crafted block rule irrelevant.
+        source = endpoint_text(rule.source)
+        dest = endpoint_text(rule.destination)
         items.append(
             Item(
                 key=f"pf:rule:{identity}",
@@ -154,7 +167,8 @@ def _rules(config_xml: str) -> list[Item]:
                 kind=Kind.CONFIG,
                 value=(
                     f"{rule.action.value} {','.join(rule.interfaces)} {rule.family.value} "
-                    f"proto={rule.protocol or 'any'} quick={rule.quick} "
+                    f"proto={rule.protocol or 'any'} src={source} dst={dest} "
+                    f"floating={rule.floating} quick={rule.quick} "
                     f"disabled={rule.disabled} descr={rule.descr}"
                 ),
                 severity=Severity.CRITICAL,
@@ -223,6 +237,49 @@ def _live_ruleset(output: str) -> list[Item]:
             label="rules loaded in pf",
         )
     ]
+
+
+def _gui_and_ssh(root: ET.Element) -> list[Item]:
+    """The GUI port and whether SSH is on — both live in `config.xml`.
+
+    NoSense toggles SSH on so it can add keys and run commands, and changing the GUI
+    port ("access via :8080, enjoy the BT tears") is done to lock the operator out of
+    the interface they were about to fix things in. Both are single config values, and
+    both are changes worth an alert rather than settings worth an opinion — the tool
+    reports that the value moved, and the operator judges whether they moved it.
+    """
+    out: list[Item] = []
+    system = root.find("system")
+    if system is not None:
+        webgui = system.find("webgui")
+        if webgui is not None:
+            protocol = webgui.findtext("protocol", "https").strip()
+            port = webgui.findtext("port", "").strip() or "(default)"
+            out.append(
+                Item(
+                    key="pf:webgui",
+                    collector="M-PF-01",
+                    kind=Kind.CONFIG,
+                    value=f"{protocol} port {port}",
+                    severity=Severity.HIGH,
+                    label=f"management GUI on {protocol} port {port}",
+                )
+            )
+        # pfSense stores SSH-enabled as the presence of an empty <enable/> element —
+        # the same backwards boolean as everywhere else on this platform.
+        ssh = system.find("ssh")
+        enabled = ssh is not None and ssh.find("enable") is not None
+        out.append(
+            Item(
+                key="pf:sshd",
+                collector="M-PF-01",
+                kind=Kind.CONFIG,
+                value="enabled" if enabled else "disabled",
+                severity=Severity.HIGH,
+                label=f"SSH is {'enabled' if enabled else 'disabled'}",
+            )
+        )
+    return out
 
 
 def _boot_commands(root: ET.Element) -> list[Item]:
@@ -319,6 +376,31 @@ def _packages(root: ET.Element) -> list[Item]:
     return out
 
 
+def _web_root(output: str) -> list[Item]:
+    """`M-FS-08` — PHP in the GUI document root newer than the platform itself.
+
+    The exact delivery point for NoSense's web shells and reverse shells, which upload a
+    `.php` and then call it — the skidy variant takes a `cmd` GET parameter, the others
+    hide behind the uploader's address. pfSense's own PHP is all older than `/etc/version`
+    because it was laid down at install, so a newer file is one somebody added.
+
+    Critical, because a web shell needs no credentials to *use* once it is in place —
+    that is the whole point of it as a fallback for when keys are removed.
+    """
+    return [
+        Item(
+            key=f"webshell-candidate:{path.strip()}",
+            collector="M-FS-08",
+            kind=Kind.CONFIG,
+            value=path.strip(),
+            severity=Severity.CRITICAL,
+            label=f"unexpected PHP in the web root: {path.strip()}",
+        )
+        for path in output.splitlines()
+        if path.strip()
+    ]
+
+
 def collect(transport: Transport, secret: str = "btht") -> Collection:
     items: list[Item] = []
     try:
@@ -338,6 +420,7 @@ def collect(transport: Transport, secret: str = "btht") -> Collection:
         items += _boot_commands(root)
         items += _cron(root)
         items += _packages(root)
+        items += _gui_and_ssh(root)
         try:
             items += _rules(config.stdout)
         except ParseError as exc:
@@ -346,6 +429,10 @@ def collect(transport: Transport, secret: str = "btht") -> Collection:
         live = transport.run(COMMANDS["M-FW-06"])
         if live.ok:
             items += _live_ruleset(live.stdout)
+
+        web = transport.run(COMMANDS["M-FS-08"])
+        if web.ok:
+            items += _web_root(web.stdout)
 
         listening = transport.run(COMMANDS["M-SVC-01"])
         if listening.ok:

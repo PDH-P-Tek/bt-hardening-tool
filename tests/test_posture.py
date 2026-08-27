@@ -165,3 +165,145 @@ def test_nothing_here_remediates_anything() -> None:
     source = inspect.getsource(posture)
     for writing in ("subprocess", "transport.run", "os.system", "Popen"):
         assert writing not in source, f"posture checks must not be able to {writing}"
+
+
+# --- pfSense rule tampering — H-PF-* -----------------------------------------
+
+
+def _rule_item(value: str, label: str = "r") -> Item:
+    from btht.app.monitor.items import Item, Kind, Severity
+
+    return Item(
+        key=f"pf:rule:{label}",
+        collector="M-FW-01",
+        kind=Kind.CONFIG,
+        value=value,
+        severity=Severity.CRITICAL,
+        label=label,
+    )
+
+
+def _live(count: int) -> Item:
+    from btht.app.monitor.items import Item, Kind, Severity
+
+    return Item(
+        key="pf:live",
+        collector="M-FW-06",
+        kind=Kind.CONFIG,
+        value=str(count),
+        severity=Severity.HIGH,
+        label="loaded",
+    )
+
+
+def test_pfctl_disable_is_caught_by_the_split_between_saved_and_loaded() -> None:
+    """`pfctl -d` disables every rule and does not show in the web interface.
+
+    The saved config is untouched, so the only tell is that pf is enforcing far fewer
+    rules than are configured. That is exactly why both halves are collected.
+    """
+    from btht.app.validate.posture import Result, check_pfsense
+
+    items = [_rule_item("pass wan inet src=any dst=x disabled=False", str(n)) for n in range(20)]
+    items.append(_live(1))  # pf flushed to almost nothing
+    check = next(c for c in check_pfsense(items) if c.id == "H-PF-01")
+    assert check.result is Result.FAIL
+    assert "pfctl -d" in check.detail
+
+
+def test_a_healthy_firewall_loads_more_than_it_configures() -> None:
+    """pf adds scrub, anti-lockout and defaults, so the live count is normally higher."""
+    from btht.app.validate.posture import Result, check_pfsense
+
+    items = [_rule_item("pass wan inet src=any dst=x disabled=False", str(n)) for n in range(20)]
+    items.append(_live(31))
+    check = next(c for c in check_pfsense(items) if c.id == "H-PF-01")
+    assert check.result is Result.PASS
+
+
+def test_a_floating_any_any_rule_is_flagged() -> None:
+    """`EVIDENCE.md` E1 — a floating pass-any-any overrides every block rule below it."""
+    from btht.app.validate.posture import Result, check_pfsense
+
+    items = [
+        _rule_item(
+            "pass wan,lan inet46 proto=any src=any dst=any floating=True "
+            "quick=False disabled=False descr=RT any any",
+            "rt",
+        ),
+        _live(30),
+    ]
+    check = next(c for c in check_pfsense(items) if c.id == "H-PF-02")
+    assert check.result is Result.FAIL
+    assert "overrides every rule below it" in check.detail
+
+
+def test_an_ordinary_ruleset_has_no_any_any_finding() -> None:
+    from btht.app.validate.posture import Result, check_pfsense
+
+    items = [
+        _rule_item("pass lan inet src=lan-net dst=any floating=False disabled=False", "ok"),
+        _live(30),
+    ]
+    check = next(c for c in check_pfsense(items) if c.id == "H-PF-02")
+    assert check.result is Result.PASS
+
+
+def test_pfsense_checks_report_unknown_without_the_collection() -> None:
+    from btht.app.validate.posture import Result, check_pfsense
+
+    check = next(c for c in check_pfsense([]) if c.id == "H-PF-01")
+    assert check.result is Result.UNKNOWN
+
+
+# --- OSPF backdoor surface — H-FRR-04/05 -------------------------------------
+
+
+def _frr(*lines: str) -> list[Item]:
+    from btht.app.monitor.items import Item, Kind, Severity
+
+    return [
+        Item(
+            key=f"frr:{i}",
+            collector="M-RT-01",
+            kind=Kind.CONFIG,
+            value=line,
+            severity=Severity.HIGH,
+            label="routing",
+        )
+        for i, line in enumerate(lines)
+    ]
+
+
+def test_ospf_without_passive_default_fails() -> None:
+    """The load-bearing OSPF-backdoor defence — without it, any segment can peer."""
+    from btht.app.validate.posture import Result, check_routing
+
+    items = _frr("username admin", "router ospf", "network 10.0.0.0/24 area 0")
+    check = next(c for c in check_routing(items) if c.id == "H-FRR-04")
+    assert check.result is Result.FAIL
+    assert "attached segment" in check.detail
+
+
+def test_ospf_with_passive_default_and_auth_passes() -> None:
+    from btht.app.validate.posture import Result, check_routing
+
+    items = _frr(
+        "username admin",
+        "router ospf",
+        "passive-interface default",
+        "interface eth1",
+        "ip ospf message-digest-key 1 md5 secret",
+        "ospf authentication message-digest",
+    )
+    ids = {c.id: c.result for c in check_routing(items)}
+    assert ids["H-FRR-04"] is Result.PASS
+    assert ids["H-FRR-05"] is Result.PASS
+
+
+def test_a_router_not_running_ospf_is_not_marked_down_for_it() -> None:
+    """Static-only routers must not fail an OSPF check that does not apply to them."""
+    from btht.app.validate.posture import check_routing
+
+    items = _frr("username admin", "ip route 0.0.0.0/0 10.0.0.1")
+    assert not any(c.id in ("H-FRR-04", "H-FRR-05") for c in check_routing(items))

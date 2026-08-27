@@ -220,6 +220,46 @@ seen in play rather than an imagined one:
 **Every one of these reports `unknown` rather than `pass` when its collector did not
 run.** An implant check that passes because it saw nothing is worse than no check.
 
+### `H-PF-*` — pfSense rule tampering, and the two moves the GUI hides
+
+The config-diff baselines every filter rule and alerts CRITICAL on any change, so most
+rule tampering — a deleted block, an added block on Elastic (8220/9200/9300) or WSUS
+(8530/8531), an attacker address dropped into the anti-lockout alias — is caught the
+moment it is collected. Two moves need more than the diff:
+
+| ID | Check | Why the diff alone is not enough |
+|---|---|---|
+| `H-PF-01` | Firewall is enforcing its rules | `pfctl -d` disables every rule and **does not show in the web interface**. The saved config is untouched, so a person reading Firewall > Rules sees their work intact. The tell is the split between saved and loaded — both are collected precisely for this, and a live count collapsed below the configured count is the signal. |
+| `H-PF-02` | No pass-any-to-any rule is shadowing the ruleset | A floating pass-any-any overrides every crafted block rule beneath it — `EVIDENCE.md` E1. It is one item in the diff among thirty; this check pulls it to the front, and flags the floating case specifically because that is the one that silently wins. |
+
+The alias, GUI-port (`M-PF-01`) and SSH-enabled (`M-PF-01`) values are collected too, so
+"change the GUI port to lock the operator out" and "toggle SSH on to add keys" both show
+as a changed value rather than passing unnoticed.
+
+### `H-FRR-04` / `H-FRR-05` — the OSPF backdoor
+
+The OSPF backdoor sends crafted OSPF packets to form an adjacency and deliver a payload
+— it can clear a firewall's rules or open a reverse shell without a credential in sight.
+Three layers stop it, and the tool now checks or generates all three:
+
+- **`passive-interface default`** (`H-FRR-04`) — without it the router offers adjacency
+  on every attached segment, and a foothold on any of them is a peer. The single most
+  important line.
+- **OSPF authentication** (`H-FRR-05`) — even where an adjacency is meant to form,
+  message-digest auth stops an unauthenticated packet being accepted as a neighbour.
+- **The generated control-plane nftables ruleset** restricts OSPF (protocol 89) to the
+  declared neighbour addresses, so a packet from anywhere else never reaches the daemon.
+
+The FRR adapter now collects the `passive-interface`, `ip ospf` and `redistribute` lines
+these read, which it did not before — so the checks had nothing to judge.
+
+### `H-IMP-06` — NoSense web shells
+
+NoSense uploads a `.php` into the GUI document root and calls it; it needs no credentials
+to *use* once in place, which is why it is the fallback for when keys are removed. `M-FS-08`
+lists PHP in `/usr/local/www` newer than the platform itself — pfSense's own PHP all
+predates `/etc/version`, so a newer file is one somebody added.
+
 ### What actually stops it
 
 The checks above find an agent that is already there. Two controls stop it arriving, and
