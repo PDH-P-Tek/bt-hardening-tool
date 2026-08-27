@@ -93,3 +93,22 @@ def test_every_link_on_every_main_page_resolves(furnished: TestClient, page: str
     assert response.status_code == 200
     for link in sorted(internal_links(response.text)):
         assert furnished.get(link).status_code != 404, f"{page} links to a 404: {link}"
+
+
+def test_the_template_libraries_are_reachable_from_the_range_page(
+    furnished: TestClient,
+) -> None:
+    """They were not, for a while, and that read as though they had been removed.
+
+    Reducing the navigation to the three phases moved host templates, services and
+    segment types "behind Range" — and then nothing on Range linked to them. A page
+    reachable only by typing its URL is a page nobody has.
+    """
+    links = internal_links(furnished.get("/range").text)
+    for page in ("/host-templates", "/services", "/segments"):
+        assert page in links, f"{page} has no way in from Range"
+
+
+def test_every_library_page_offers_a_way_back(furnished: TestClient) -> None:
+    for page in ("/host-templates", "/services", "/segments"):
+        assert '/range"' in furnished.get(page).text, f"{page} is a dead end"

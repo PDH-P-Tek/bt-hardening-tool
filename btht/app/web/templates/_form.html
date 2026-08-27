@@ -20,7 +20,11 @@
         {% if not field.checkboxes %}<span class="sub">None declared yet.</span>{% endif %}
       </div>
     {% elif field.options is defined %}
-      <select id="f-{{ field.name }}" name="{{ field.name }}">
+      {# `fills` makes a template do its job: choosing one populates the rest of the
+         form. Carried as data on the element so one listener in base.html serves every
+         form, and so a form with no template behaves exactly as it did before. #}
+      <select id="f-{{ field.name }}" name="{{ field.name }}"
+              {% if field.fills is defined %}data-fills="{{ field.fills|tojson|forceescape }}"{% endif %}>
         {% for option in field.options %}
         <option value="{{ option }}" {% if option == field.value %}selected{% endif %}>
           {{ option or "—" }}</option>

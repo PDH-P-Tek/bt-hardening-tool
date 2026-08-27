@@ -327,3 +327,37 @@ def test_the_workstation_split_follows_what_the_note_says() -> None:
     loaded = catalogue()
     assert loaded.host_types["windows_workstation"].services == ("RDP",)
     assert loaded.host_types["linux_workstation"].services == ("SSH",)
+
+
+# --- templates doing their job ----------------------------------------------
+
+
+def test_choosing_a_host_template_fills_in_the_rest_of_the_form() -> None:
+    """The whole reason templates exist. Without this a template is a label.
+
+    Carried as data on the select so one listener serves every form; the values are
+    asserted here because a broken map fails silently in the browser.
+    """
+    from pathlib import Path
+
+    from btht.app.model.services import load_catalogue
+    from btht.app.web.forms import host_fields
+
+    catalogue = load_catalogue(Path(__file__).resolve().parents[1] / "service-catalogue.yaml")
+    field = next(f for f in host_fields(catalogue) if f["name"] == "host_type")
+
+    assert "fills" in field, "picking a template must populate the form"
+    for name, kind in catalogue.host_types.items():
+        assert field["fills"][name]["os"] == kind.default_os
+        assert field["fills"][name]["services"] == list(kind.services)
+
+
+def test_host_groups_get_the_same_treatment() -> None:
+    from pathlib import Path
+
+    from btht.app.model.services import load_catalogue
+    from btht.app.web.forms import group_fields
+
+    catalogue = load_catalogue(Path(__file__).resolve().parents[1] / "service-catalogue.yaml")
+    field = next(f for f in group_fields(catalogue) if f["name"] == "host_type")
+    assert "fills" in field

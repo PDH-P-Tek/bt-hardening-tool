@@ -10,6 +10,12 @@ A field is a dictionary rather than a class because a template reads it. The sha
     text        {name, label, value, hint, placeholder}
     select      + {options: [...]}
     checkboxes  + {checkboxes: [...]}, value is a list
+
+A select may also carry `fills`: a map from option to the other fields that option
+should populate. Picking a host template then fills in the operating system and ticks
+the services it runs — which is the entire reason templates exist. It fills on change
+only, never on load, so opening an existing host to edit it never quietly rewrites what
+was already declared.
 """
 
 from __future__ import annotations
@@ -20,6 +26,14 @@ from btht.app.model.estate import Estate, Firewall, Host, HostGroup, Interface, 
 from btht.app.model.services import Catalogue, HostType, Service
 
 Field = dict[str, Any]
+
+
+def _template_fills(catalogue: Catalogue) -> dict[str, dict[str, Any]]:
+    """What each host template should put in the rest of the form."""
+    return {
+        name: {"os": kind.default_os, "services": list(kind.services)}
+        for name, kind in catalogue.host_types.items()
+    }
 
 
 def _text(name: str, label: str, value: Any = "", **extra: Any) -> Field:
@@ -87,16 +101,19 @@ def host_fields(
         _text("segment_role", "Segment", host.segment_role if host else segment),
         {
             "name": "host_type",
-            "label": "Host template",
+            "label": "What kind of machine is this?",
             "value": host.service_role if host else "",
             "options": ["", *sorted(catalogue.host_types)],
-            "hint": "Leaving the services below unticked uses the template's.",
+            "fills": _template_fills(catalogue),
+            "hint": "Picking one fills in the operating system and ticks what it runs. "
+            "Change anything you like afterwards — the template is a starting point.",
         },
         {
             "name": "services",
             "label": "Services it runs",
             "value": list(host.services) if host else [],
             "checkboxes": sorted(catalogue.services),
+            "hint": "Ports come from the service catalogue, so you pick RDP, not 3389.",
         },
         {
             "name": "out_of_bounds",
@@ -125,9 +142,11 @@ def group_fields(
         _text("os", "Operating system", group.os if group else "", placeholder="Windows 10 22H2"),
         {
             "name": "host_type",
-            "label": "Host template",
+            "label": "What kind of machine are these?",
             "value": group.host_type if group else "",
             "options": ["", *sorted(catalogue.host_types)],
+            "fills": _template_fills(catalogue),
+            "hint": "Picking one fills in the operating system and ticks what they run.",
         },
         _text("segment_role", "Segment", group.segment_role if group else segment),
         _text(

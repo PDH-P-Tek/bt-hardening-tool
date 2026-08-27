@@ -6,6 +6,33 @@
 <p class="sub">{{ estate.firewalls|length }} enclave(s) · {{ host_count }} host(s) ·
   {{ estate.all_nodes()|length }} managed device(s)</p>
 
+{# The libraries everything else picks from. They were reachable only by typing the
+   URL after the navigation was reduced to the three phases, which made the templates
+   look as though they had been removed. #}
+<h2>Set up once, use everywhere</h2>
+<div class="tiles">
+  <a class="tile" href="/host-templates">
+    <span class="count">{{ catalogue.host_types|length }}</span>
+    <h3>Host templates</h3>
+    <p>Kinds of machine, and what each one runs. Picking one fills in a new host for you</p>
+  </a>
+  <a class="tile" href="/services">
+    <span class="count">{{ catalogue.services|length }}</span>
+    <h3>Service templates</h3>
+    <p>Named services and their ports, so you pick RDP rather than 3389</p>
+  </a>
+  <a class="tile" href="/segments">
+    <span class="count">{{ estate.role_vocabulary|length }}</span>
+    <h3>Segment types</h3>
+    <p>The kinds of network segment this range has</p>
+  </a>
+  <a class="tile" href="/range/settings">
+    <span class="count">⚙</span>
+    <h3>Range settings</h3>
+    <p>Team name and number</p>
+  </a>
+</div>
+
 <div class="panel">
 <h2>Range settings</h2>
 <table>

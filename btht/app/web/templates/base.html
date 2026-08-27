@@ -148,6 +148,31 @@ button.tile{text-align:left;font:inherit;cursor:pointer}
 </div>
 <script>
 // Openers carry the id of the pop-out they open. One listener, no per-element wiring.
+// Choosing a host template fills in the rest of the form: the operating system, and
+// the services that kind of machine runs. On change only — opening an existing host to
+// edit it must never quietly rewrite what was already declared.
+document.addEventListener("change", function (event) {
+  var select = event.target.closest("select[data-fills]");
+  if (!select) { return; }
+  var form = select.form || select.closest("form");
+  if (!form) { return; }
+  var values;
+  try { values = JSON.parse(select.dataset.fills)[select.value]; }
+  catch (err) { return; }
+  if (!values) { return; }
+  Object.keys(values).forEach(function (name) {
+    var value = values[name];
+    var boxes = form.querySelectorAll('input[type=checkbox][name="' + name + '"]');
+    if (boxes.length) {
+      boxes.forEach(function (box) { box.checked = value.indexOf(box.value) !== -1; });
+      return;
+    }
+    var field = form.querySelector('[name="' + name + '"]');
+    // Never overwrite something the operator has already typed.
+    if (field && !field.value) { field.value = value; }
+  });
+});
+
 document.addEventListener("click", function (event) {
   var opener = event.target.closest("[data-opens]");
   if (!opener) { return; }

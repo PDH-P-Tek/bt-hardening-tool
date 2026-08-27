@@ -1,21 +1,31 @@
 {% extends "base.html" %}
 {% set page = "topology" %}
 {% block body %}
-<h1>{{ slug }} — topology</h1>
-<p class="sub">Click a firewall to open its segments, then a segment to see the machines
-on it. To change anything, go to <a href="/range">Range</a>.</p>
+<h1>Topology</h1>
+<p class="sub">{{ estate.label }} — click a firewall to open its segments, then a segment
+to see the machines on it. To change anything, go to <a href="/range">Range</a>.</p>
 
 <style>
+/* The diagram is the page, so it breaks out of the 1100px text column and takes the
+   window. Boxed into the column beside a permanent detail pane it had about a third of
+   the screen, which is no use for something modelled on a wall poster. */
+.bleed{width:100vw;margin-left:calc(50% - 50vw);padding:0 20px}
 .topology{display:flex;gap:18px;align-items:flex-start}
-/* The diagram is a wall poster. It is never scaled down to fit the column — it keeps
-   its natural size and the column scrolls, because a legible picture you scroll beats
-   a complete picture you cannot read. */
+/* Never scaled down to fit. It keeps its natural size and the canvas scrolls, because
+   a legible picture you scroll beats a complete picture you cannot read. */
 .canvas{flex:1 1 auto;min-width:0;background:var(--panel);border:1px solid var(--line);
-  border-radius:8px;padding:10px;overflow:auto;max-height:78vh}
-.canvas svg{display:block}
-.pane{flex:0 0 290px;background:var(--panel);border:1px solid var(--line);
-  border-radius:8px;padding:16px 18px;position:sticky;top:12px}
-@media (max-width:900px){.topology{flex-wrap:wrap}.pane{flex:1 1 100%;position:static}}
+  border-radius:8px;padding:10px;overflow:auto;max-height:82vh}
+.canvas svg{display:block;margin:0 auto}
+/* The pane only exists once there is something selected, so an empty one never takes
+   space from the drawing. */
+.pane{flex:0 0 300px;background:var(--panel);border:1px solid var(--line);
+  border-radius:8px;padding:16px 18px;position:sticky;top:12px;max-height:82vh;
+  overflow:auto}
+@media (max-width:900px){
+  .bleed{width:auto;margin-left:0;padding:0}
+  .topology{flex-wrap:wrap}
+  .pane{flex:1 1 100%;position:static}
+}
 svg a{cursor:pointer}
 svg .shape rect{fill:var(--bg);stroke:var(--line);stroke-width:1.5px}
 svg a:hover .shape rect{stroke:var(--accent);stroke-width:2px}
@@ -43,6 +53,7 @@ svg .badge{font-size:11px;fill:var(--muted)}
 .filters select,.filters input{width:auto;min-width:130px}
 </style>
 
+<div class="bleed">
 <div class="panel">
 <form method="get" action="/range/topology" class="filters">
   {% for open_id in open_ids %}<input type="hidden" name="open" value="{{ open_id }}">{% endfor %}
@@ -85,8 +96,8 @@ svg .badge{font-size:11px;fill:var(--muted)}
 
 <div class="topology">
   <div class="canvas">{{ svg|safe }}</div>
+  {% if diagram.focus %}
   <div class="pane">
-    {% if diagram.focus %}
     <h2 style="margin-top:0">{{ diagram.focus.title }}</h2>
     {% for warning in diagram.focus.warnings %}
       <div class="note warn">{{ warning }}</div>
@@ -109,9 +120,8 @@ svg .badge{font-size:11px;fill:var(--muted)}
       {% endfor %}
     </div>
     {% endif %}
-    {% else %}
-    <p class="sub">Select something on the diagram.</p>
-    {% endif %}
   </div>
+  {% endif %}
+</div>
 </div>
 {% endblock %}
