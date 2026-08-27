@@ -43,7 +43,9 @@ def _template_fills(
         name: {
             "os": kind.default_os,
             "services": list(kind.services),
-            "isa_checks": list(isa.propose(name)) if isa is not None else [],
+            # From the template itself now, alongside its services — one place that
+            # says what this kind of machine is, rather than a parallel role map.
+            "isa_checks": list(kind.isa_checks),
         }
         for name, kind in catalogue.host_types.items()
     }
@@ -352,7 +354,11 @@ def service_fields(service: Service | None = None) -> list[Field]:
     ]
 
 
-def host_type_fields(catalogue: Catalogue, host_type: HostType | None = None) -> list[Field]:
+def host_type_fields(
+    catalogue: Catalogue,
+    host_type: HostType | None = None,
+    isa: IsaCatalogue | None = None,
+) -> list[Field]:
     return [
         _text(
             "name", "Name", host_type.name if host_type else "", placeholder="uav_ground_station"
@@ -363,6 +369,10 @@ def host_type_fields(catalogue: Catalogue, host_type: HostType | None = None) ->
             "label": "Services it runs",
             "value": list(host_type.services) if host_type else [],
             "checkboxes": sorted(catalogue.services),
+            "hint": "The default set a machine of this kind runs. Adjustable per host.",
         },
+        _isa_field(
+            "isa_checks", list(host_type.isa_checks) if host_type else [], isa
+        ),
         _text("descr", "Description", host_type.descr if host_type else ""),
     ]

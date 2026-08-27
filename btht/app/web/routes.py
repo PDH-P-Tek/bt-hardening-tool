@@ -1908,6 +1908,7 @@ def add_host_type(
     name: str = Form(...),
     default_os: str = Form(""),
     services: list[str] = Form(default=[]),
+    isa_checks: list[str] = Form(default=[]),
     descr: str = Form(""),
 ) -> RedirectResponse:
     catalogue = load_services(SERVICE_CATALOGUE)
@@ -1922,6 +1923,7 @@ def add_host_type(
     host_type = HostType(
         name=name.strip(),
         services=tuple(s for s in services if s),
+        isa_checks=tuple(c for c in isa_checks if c),
         default_os=default_os.strip(),
         descr=descr.strip(),
         custom=True,
@@ -1944,6 +1946,7 @@ def edit_host_type_form(request: Request, name: str) -> HTMLResponse:
     host_type = catalogue.host_types.get(name)
     if host_type is None:
         return _services_page_error(request, f"no host type {name}")
+    isa = load_catalogue(ISA_CHECKS if ISA_CHECKS.exists() else None)
     return render(
         request,
         "edit.html",
@@ -1952,7 +1955,7 @@ def edit_host_type_form(request: Request, name: str) -> HTMLResponse:
         action=f"/services/types/edit/{name}",
         delete_action=f"/services/types/delete/{name}",
         delete_warning="Refused while any host or group still uses it.",
-        fields=forms.host_type_fields(catalogue, host_type),
+        fields=forms.host_type_fields(catalogue, host_type, isa=isa),
     )
 
 
@@ -1962,6 +1965,7 @@ def edit_host_type(
     new_name: str = Form("", alias="name"),
     default_os: str = Form(""),
     services: list[str] = Form(default=[]),
+    isa_checks: list[str] = Form(default=[]),
     descr: str = Form(""),
 ) -> RedirectResponse:
     catalogue = load_services(SERVICE_CATALOGUE)
@@ -1969,6 +1973,7 @@ def edit_host_type(
     host_type = HostType(
         name=new_name.strip() or name,
         services=tuple(s for s in services if s),
+        isa_checks=tuple(c for c in isa_checks if c),
         default_os=default_os.strip(),
         descr=descr.strip(),
         custom=existing.custom if existing else True,
@@ -2291,6 +2296,12 @@ def host_templates_page(request: Request) -> HTMLResponse:
         host_types=[catalogue.host_types[n] for n in sorted(catalogue.host_types)],
         catalogue=catalogue,
         service_names=sorted(catalogue.services),
+        new_host_type_fields=forms.host_type_fields(
+            catalogue, isa=load_catalogue(ISA_CHECKS if ISA_CHECKS.exists() else None)
+        ),
+        isa_check_names=sorted(
+            load_catalogue(ISA_CHECKS if ISA_CHECKS.exists() else None).checks
+        ),
         messages=(
             [(request.query_params.get("k", "ok"), request.query_params["m"])]
             if request.query_params.get("m")

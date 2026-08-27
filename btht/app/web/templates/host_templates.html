@@ -3,23 +3,20 @@
 {% block body %}
 <div class="crumb"><a href="/range">Range</a> → set up once, use everywhere</div>
 <h1>Host templates</h1>
-<p class="sub">Kinds of machine, and the services each one runs. Picking a template when
-you add a host opens the right set of ports without anyone having to remember them.</p>
+<p class="sub">Kinds of machine — what each one runs, and which ISA scoring checks it
+carries. Picking a template when you add a host fills in both, so the ports open and the
+machine is scored without anyone remembering either.</p>
 
 <div class="panel">
 <table>
-  <tr><th>template</th><th>default OS</th><th>services</th><th>ports that implies</th><th></th></tr>
+  <tr><th>template</th><th>default OS</th><th>services</th><th>scored (ISA)</th><th></th></tr>
   {% for t in host_types %}
   <tr>
     <td>{{ t.name }}{% if t.custom %} <span class="tag">yours</span>{% endif %}</td>
     <td>{{ t.default_os }}</td>
     <td class="sub">{{ t.services|join(", ") or "none" }}</td>
-    <td class="sub"><code>
-      {%- set pairs = catalogue.ports_for(t.services) -%}
-      {%- for proto, port in pairs[:6] %}{{ proto }}/{{ port }} {% endfor -%}
-      {%- if pairs|length > 6 %}+{{ pairs|length - 6 }} more{% endif -%}
-      {%- if not pairs %}none{% endif -%}
-    </code></td>
+    <td>{% for c in t.isa_checks %}<span class="tag {% if c == 'HOST' %}ok{% endif %}">{{ c }}</span> {% endfor %}
+      {% if not t.isa_checks %}<span class="sub">not scored</span>{% endif %}</td>
     <td><a class="btn small quiet" href="/services/types/edit/{{ t.name|urlencode }}">Edit</a></td>
   </tr>
   {% endfor %}
@@ -44,6 +41,20 @@ you add a host opens the right set of ports without anyone having to remember th
     </div>
     {% endfor %}
   </div>
+  <label>scored (ISA board)</label>
+  <div class="row" style="gap:6px 16px;margin-top:2px">
+    {% for name in isa_check_names %}
+    <div style="flex:0 0 auto">
+      <label style="text-transform:none;margin:0;font-size:12.5px">
+        <input type="checkbox" name="isa_checks" value="{{ name }}" style="width:auto">
+        {{ name }}
+      </label>
+    </div>
+    {% endfor %}
+  </div>
+  <div class="sub hint">What the ISA board tests on a machine of this kind. HOST is the
+  ICMP ping. Each becomes a non-removable scoring rule on every host built from this
+  template.</div>
   <label>description</label><input name="descr">
   <button class="btn" type="submit">Add host template</button>
 </form>

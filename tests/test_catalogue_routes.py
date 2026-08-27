@@ -74,15 +74,20 @@ def test_a_distinctly_named_template_is_accepted(client: TestClient, tmp_path: P
     assert "windows_workstation" in catalogue.host_types, "the original is untouched"
 
 
-def test_the_shipped_catalogue_is_not_written_by_these_tests() -> None:
-    """The control on the fixture above, proved rather than assumed."""
-    import subprocess
+def test_the_shipped_catalogue_is_not_written_by_these_tests(client: TestClient) -> None:
+    """The control on the fixture above, proved rather than assumed.
 
-    changed = subprocess.run(
-        ["git", "status", "--porcelain", "service-catalogue.yaml"],
-        cwd=REPO,
-        capture_output=True,
-        text=True,
-        check=False,
+    Compares the tracked file's bytes before and after a route that writes a catalogue,
+    rather than reading `git status` — the working tree can be legitimately dirty from an
+    unrelated edit, and that is not this test's concern. What it must catch is a route
+    writing the *shipped* file instead of the fixture's temp copy.
+    """
+    before = (REPO / "service-catalogue.yaml").read_bytes()
+    client.post(
+        "/services/types/new",
+        data={"name": "probe_type", "default_os": "x"},
+        follow_redirects=True,
     )
-    assert changed.stdout.strip() == "", "the tracked catalogue must be untouched"
+    assert (REPO / "service-catalogue.yaml").read_bytes() == before, (
+        "a route wrote the shipped catalogue instead of the fixture copy"
+    )

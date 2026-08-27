@@ -85,6 +85,12 @@ class HostType:
 
     name: str
     services: tuple[str, ...] = ()
+    isa_checks: tuple[str, ...] = ()
+    """The scoring checks a machine of this kind carries by default, in the ISA board's
+    own names — `HOST` (the ICMP ping) among them for anything the scoring bot pings.
+    Sits here beside `services` because both are "what this kind of machine is": a host
+    built from the template gets both, and the operator adjusts either per host."""
+
     default_os: str = ""
     descr: str = ""
     custom: bool = False
@@ -201,6 +207,7 @@ def load_catalogue(path: Path) -> Catalogue:
         host_types[str(name)] = HostType(
             name=str(name),
             services=tuple(str(s) for s in spec.get("services", ()) or ()),
+            isa_checks=tuple(str(c) for c in spec.get("isa_checks", ()) or ()),
             default_os=str(spec.get("default_os", "")),
             descr=str(spec.get("descr", "")),
             custom=bool(spec.get("custom", False)),
@@ -235,6 +242,7 @@ def save_catalogue(catalogue: Catalogue, path: Path) -> None:
     data["host_types"] = {
         name: {
             "services": list(t.services),
+            **({"isa_checks": list(t.isa_checks)} if t.isa_checks else {}),
             **({"default_os": t.default_os} if t.default_os else {}),
             **({"descr": t.descr} if t.descr else {}),
             **({"custom": True} if t.custom else {}),
