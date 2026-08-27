@@ -122,7 +122,7 @@ and 1.3, nothing from the generator's front half.
 | 5.1 | ✅ Inventory, credential store, SSH transport, heartbeat | §10.1 | "Are all my boxes up, is my access intact" answerable |
 | 5.2 | ✅ Linux adapter — accounts, keys, sudo, cron | §5.1–5.3 | Easiest platform to test off-range; hits the DCM26 pattern directly |
 | 5.3 | ✅ **Diff engine, item identity, review state** | §3.4 | Accept / flag / suppress work **per item**. Accepting one change does not resurface nine others |
-| 5.4 | ✅ Estate / host / item dashboard — **the 2.2 topology with live status on it** | §8.2 | First point the monitor is genuinely usable. A host that stops answering is visible as a shape, not a log line |
+| 5.4 | ✅ Estate / host / item dashboard | §8.2 | First point the monitor is genuinely usable. **Host tiles, not the topology** — the estate view is one tile per host coloured by its worst unreviewed finding, with the total dominating the page. An earlier build reused the 2.2 diagram here; it looked economical and could not be triaged from |
 
 > 5.3 is the product, not the plumbing. Prove it on one adapter before adding more.
 > **Config is diffed, state is never diffed** (§3.3) — the rule that decides whether this
@@ -174,6 +174,38 @@ that or nobody will use it.
 
 ---
 
+## Phase 10 — Making it usable
+
+The engine was finished and unreachable. Nothing called `collect()`, no route touched
+the triage store, every topology click 404'd, and the two biggest actions — declare
+policy, review and export — were buried inside a conditional block. This phase is the
+operator's half.
+
+| # | Step | Source | Done when |
+|---|---|---|---|
+| 10.1 | ✅ **Collection runtime.** In-container scheduler on app lifespan; 60s default, 30s floor, backoff 60→120→300 then hold, full collection every cycle | `MONITORING.md` §3.1, §3.5 | The monitor runs without anybody pressing anything. Idle with a clear reason when no key is configured |
+| 10.2 | ✅ **Connection test.** Per box, naming the specific failure — auth, refused, timeout, host key, permission, missing command — each with the next action | §7 S6 | Never "connection failed" |
+| 10.3 | ✅ **Two baselines**, as-received and hardened, both kept and both shown against a changed item | §7 S7 | "Was that us, or was it always like that?" is answerable |
+| 10.4 | ✅ **Triage surface.** Estate tiles → host → item, with accept / flag / suppress reaching the store. Suppress refuses without a note | §8.2, §3.4 | Accepting one item leaves the other nine exactly as they were |
+| 10.5 | ✅ **Session correlation.** `M-SESS-01` collects logins and sshd's accepted-key lines; the item view shows who was on the box when a change appeared and flags any key absent from `M-AUTH-01` | new — see below | Change becomes evidence rather than a fact |
+| 10.6 | ✅ **Rules review.** The ruleset tab by tab in entry order, one line of plain English per rule, findings in front of it, sign-off recorded | `SPEC.md` §9 | Somebody can read it and say "yes, that looks correct" |
+| 10.7 | ✅ **Router hardening.** sshd drop-in and an input-only nftables ruleset per router | `HARDENING.md` §5, §9 | Provably no forward or output chain, so throughput is untouched |
+| 10.8 | ✅ **The proving drill.** Three plants, three separate verdicts | §8 S8 | An untested monitor is worse than no monitor |
+| 10.9 | ✅ **Next-step guidance** on every page, worked out from the estate's own state | — | Nobody has to infer a three-day order from a navigation bar |
+
+Two additions the documents do not cover, both argued rather than assumed:
+
+> **Session correlation.** The stated purpose is evidence of Red Team activity, and
+> detecting change is half of that. `M-AUTH-01` already inventories keys and `H-SSH-19`
+> exists precisely so sshd logs the fingerprint of every login. Nothing joined them.
+>
+> **Router control-plane filtering.** `H-FRR-01` binding VTY to loopback works only if
+> you remembered every daemon. A default-drop input chain also covers the one you forgot
+> — without touching what the router forwards, which is asserted by test rather than
+> promised in a comment.
+
+---
+
 ## Phase 8 — Gated and deferred
 
 Nothing here blocks anything above it.
@@ -183,7 +215,7 @@ Nothing here blocks anything above it.
 | 8.1 | Tier 2 section-restore XML | `SPEC.md` §9 | **BLOCKED on Q2** — verify on a CE 2.8.1 box first. Do not ship on assumption |
 | 8.2 | ✅ Verification manifest and nmap import | `SPEC.md` §11.12, `VERIFICATION.md` | — |
 | 8.3 | ✅ Estate-level cross-enclave checks | `SPEC.md` §11.13 | Needs two or more enclaves modelled |
-| 8.4 | Monitor polish — `/metrics`, digest export, shift handover | `MONITORING.md` §10.9 | — |
+| 8.4 | ✅ Monitor polish — `/metrics`, digest export, shift handover | `MONITORING.md` §10.9 | All three reachable from the dashboard |
 | 8.5 | `nft monitor` event streaming | `MONITORING.md` §10.10 | Phase 2 by design. Buys latency only |
 
 ---
