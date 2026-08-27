@@ -11,6 +11,11 @@ rules are generated from what is actually declared on each segment.</div>
 {% endif %}
 
 <div class="tiles">
+  <a class="tile" href="/rules/routers/list">
+    <span class="count">→</span>
+    <h3>Router hardening</h3>
+    <p>SSH and a firewall for the routers themselves</p>
+  </a>
 {% for card in cards %}
   <div class="tile">
     <h3>{{ card.display_name }}</h3>

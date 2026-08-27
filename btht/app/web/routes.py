@@ -86,7 +86,7 @@ from btht.app.model.services import (
     save_catalogue as save_services,
 )
 from btht.app.validate.rules import Context, Severity, run_all
-from btht.app.web import forms, guide, progress
+from btht.app.web import forms, guide, progress, routerpolicy
 from btht.app.web.topology import View, layout, render_svg
 
 TEMPLATES = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
@@ -852,6 +852,152 @@ def export(enclave: str) -> Any:
 
 
 # ===========================================================================
+#  Router hardening — `HARDENING.md` §5, §9
+# ===========================================================================
+#
+# The routers are also boxes. They get sshd hardening and a firewall of their own —
+# one that filters what is addressed *to* the router and provably leaves forwarded
+# traffic alone. See `generate/emit_router.py` for why that separation is the point.
+
+
+@router.get("/rules/routers/list", response_class=HTMLResponse)
+def router_hardening(request: Request) -> HTMLResponse:
+    """Every declared router, with what it will be told to permit to itself."""
+    path = estate_path()
+    if not path.exists():
+        return render(request, "index.html", declared=False)
+    estate = load_estate(path)
+    policy = load_policy(path)
+    stored = routerpolicy.load(path)
+
+    rows = []
+    for node in estate.all_nodes():
+        if node.platform is not Platform.FRR:
+            continue
+        resolved = routerpolicy.resolve(estate, policy, stored, node.name)
+        rows.append(
+            {
+                "node": node,
+                "policy": resolved,
+                "derived_peers": routerpolicy.derived_peers(estate, node.name),
+                "derived_mgmt": routerpolicy.derived_mgmt(policy),
+                "overridden": bool(stored.for_router(node.name)),
+                "ready": bool(resolved.mgmt_sources),
+            }
+        )
+    return render(request, "rules_routers.html", estate=estate, rows=rows)
+
+
+@router.get("/rules/routers/{name}", response_class=HTMLResponse)
+def router_detail(request: Request, name: str) -> HTMLResponse:
+    """One router: what it permits to itself, and the two files that say so."""
+    from btht.app.generate.emit_router import (
+        RefusedToGenerate,
+        control_plane_nft,
+        sshd_drop_in,
+    )
+    from btht.app.generate.emit_router import (
+        checklist as router_checklist,
+    )
+
+    path = estate_path()
+    estate = load_estate(path)
+    node = next((n for n in estate.all_nodes() if n.name == name), None)
+    if node is None:
+        return _range_page(request, path, [("err", f"no router {name}")])
+    policy = load_policy(path)
+    stored = routerpolicy.load(path)
+    resolved = routerpolicy.resolve(estate, policy, stored, name)
+
+    refused = ""
+    nft = ""
+    try:
+        nft = control_plane_nft(resolved)
+    except RefusedToGenerate as exc:
+        refused = str(exc)
+
+    return render(
+        request,
+        "rules_router.html",
+        node=node,
+        policy=resolved,
+        refused=refused,
+        nft=nft,
+        sshd=sshd_drop_in(resolved),
+        steps=router_checklist(resolved),
+        derived_peers=routerpolicy.derived_peers(estate, name),
+        derived_mgmt=routerpolicy.derived_mgmt(policy),
+    )
+
+
+@router.post("/rules/routers/{name}")
+def save_router_policy(
+    name: str,
+    mgmt_sources: str = Form(""),
+    peers: str = Form(""),
+    ospf: str = Form(""),
+    bgp: str = Form(""),
+    allow_groups: str = Form(""),
+    listen_address: str = Form(""),
+) -> RedirectResponse:
+    path = estate_path()
+    stored = routerpolicy.load(path)
+    stored.set(
+        name,
+        {
+            "mgmt_sources": mgmt_sources,
+            "peers": peers,
+            "ospf": bool(ospf),
+            "bgp": bool(bgp),
+            "allow_groups": allow_groups,
+            "listen_address": listen_address.strip(),
+        },
+    )
+    routerpolicy.save(stored, path)
+    return RedirectResponse(f"/rules/routers/{name}", status_code=303)
+
+
+@router.post("/rules/routers/{name}/reset")
+def reset_router_policy(name: str) -> RedirectResponse:
+    """Back to what the range already says. Overrides are the exception, not the record."""
+    path = estate_path()
+    stored = routerpolicy.load(path)
+    stored.clear(name)
+    routerpolicy.save(stored, path)
+    return RedirectResponse(f"/rules/routers/{name}", status_code=303)
+
+
+@router.get("/rules/routers/{name}/file/{what}")
+def router_file(name: str, what: str) -> Any:
+    """The generated file, as text to save and take to the box."""
+    from fastapi.responses import PlainTextResponse
+
+    from btht.app.generate.emit_router import (
+        RefusedToGenerate,
+        control_plane_nft,
+        sshd_drop_in,
+    )
+    from btht.app.generate.emit_router import (
+        checklist as router_checklist,
+    )
+
+    path = estate_path()
+    estate = load_estate(path)
+    resolved = routerpolicy.resolve(estate, load_policy(path), routerpolicy.load(path), name)
+    try:
+        bodies = {
+            "nft": lambda: control_plane_nft(resolved),
+            "sshd": lambda: sshd_drop_in(resolved),
+            "steps": lambda: router_checklist(resolved),
+        }
+        if what not in bodies:
+            return PlainTextResponse(f"unknown file {what}", status_code=404)
+        return PlainTextResponse(bodies[what]())
+    except RefusedToGenerate as exc:
+        return PlainTextResponse(f"Refusing to generate: {exc}", status_code=409)
+
+
+# ===========================================================================
 #  The monitor — `MONITORING.md` §8.2
 # ===========================================================================
 #
@@ -1001,8 +1147,9 @@ def monitor_item(request: Request, host: str, key: str) -> HTMLResponse:
                 hardened=None,
             )
         item = dict(row)
-        sessions = around(_sessions_for(store, host), str(item["last_changed"]),
-                          window=timedelta(minutes=15))
+        sessions = around(
+            _sessions_for(store, host), str(item["last_changed"]), window=timedelta(minutes=15)
+        )
         unknown = _unknown_key_sessions(sessions, _key_inventory(store, host))
         as_received = store.snapshot_value(host, key, BaselineKind.AS_RECEIVED)
         hardened = store.snapshot_value(host, key, BaselineKind.HARDENED)
@@ -1116,9 +1263,7 @@ async def monitor_test(request: Request) -> RedirectResponse:
 
         credentials = Credentials()
     nodes = estate.all_nodes()
-    results = await asyncio.gather(
-        *(asyncio.to_thread(probe, node, credentials) for node in nodes)
-    )
+    results = await asyncio.gather(*(asyncio.to_thread(probe, node, credentials) for node in nodes))
     request.app.state.last_probes = {p.node: p for p in results}
     return RedirectResponse("/monitor/setup", status_code=303)
 

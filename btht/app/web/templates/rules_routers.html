@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% set page = "rules" %}
+{% block body %}
+<div class="crumb"><a href="/rules">Rules</a> → routers</div>
+<h1>Router hardening</h1>
+<p class="sub">The routers are boxes too. Each gets SSH hardening and a firewall that
+protects the router itself — what it forwards is untouched.</p>
+
+{% if not rows %}
+<div class="note warn">No routers declared. Add them on <a href="/range?routers=1">Range</a>,
+then say on each firewall's WAN interface which routers it peers with — the peer list
+here is worked out from that rather than typed again.</div>
+{% endif %}
+
+<div class="tiles">
+{% for row in rows %}
+  <div class="tile">
+    <h3>{{ row.node.name }}</h3>
+    <p><code>{{ row.node.mgmt_address }}</code> · FRR</p>
+    <table style="margin-top:10px">
+      <tr><th>managed from</th>
+        <td class="mono">{{ row.policy.mgmt_sources|join(", ") or "—" }}</td></tr>
+      <tr><th>peers with</th>
+        <td class="mono">{{ row.policy.peers|join(", ") or "nothing declared" }}</td></tr>
+      <tr><th>adjacency</th>
+        <td>{% if row.policy.ospf %}<span class="tag">OSPF</span>{% endif %}
+            {% if row.policy.bgp %}<span class="tag">BGP</span>{% endif %}
+            {% if not row.policy.ospf and not row.policy.bgp %}none{% endif %}</td></tr>
+    </table>
+    {% if not row.ready %}
+    <div class="note warn" style="margin:12px 0 0">No management source, so nothing can
+      be generated — a default-drop chain with nothing permitted to reach port 22 is a
+      lockout.</div>
+    {% endif %}
+    <p style="margin-top:12px">
+      <a class="btn" href="/rules/routers/{{ row.node.name }}">Open</a>
+      {% if row.overridden %}<span class="tag">edited</span>{% endif %}
+    </p>
+  </div>
+{% endfor %}
+</div>
+{% endblock %}

@@ -1,0 +1,299 @@
+"""Hardening output for the FRR routers.
+
+`HARDENING.md` §9 *checks* router posture and §5 applies the sshd checks to routers via
+`H-FRR-12`. Neither generates the fix, and on a range where nobody has Ansible that gap
+means the checks produce a list of things nobody has time to write by hand.
+
+Two outputs, and the second one needs its constraint stated before its content:
+
+**The control-plane ruleset filters traffic addressed to the router and nothing else.**
+It emits a single `input` base chain. It never emits `forward`, and it never emits
+`output`. Transit traffic — the entire reason the box exists — is not inspected, not
+counted and not touched. That is a property of the generated text, so it is asserted by
+a test rather than promised in a comment.
+
+This is the belt to `H-FRR-01`'s braces. Binding every daemon's VTY port to loopback
+works only if you remembered every daemon; a default-drop input chain also covers the
+one you forgot, and the ones a package update adds later. Together with `H-FRR-04`
+(`passive-interface default`) and `H-FRR-05` (adjacency authentication), it closes the
+path from a foothold on an attached segment to a seat in the routing domain.
+
+Both outputs are text for a person to read and apply. Nothing here connects to anything.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+
+#: `H-SSH-*`, in the order they appear in `HARDENING.md` §5, with the reason attached.
+#: The reason travels with the setting because the operator applying this is deciding
+#: whether to accept an outage for it, and cannot do that from the setting name alone.
+SSHD_SETTINGS: tuple[tuple[str, str, str], ...] = (
+    ("PermitRootLogin", "no", "H-SSH-01 — forces attribution through a named account"),
+    ("PasswordAuthentication", "no", "H-SSH-02 — removes credential guessing entirely"),
+    (
+        "KbdInteractiveAuthentication",
+        "no",
+        "H-SSH-03 — the way PasswordAuthentication gets silently bypassed",
+    ),
+    ("PermitEmptyPasswords", "no", "H-SSH-04"),
+    ("PubkeyAuthentication", "yes", "H-SSH-05"),
+    ("MaxAuthTries", "3", "H-SSH-07"),
+    ("LoginGraceTime", "30", "H-SSH-08"),
+    ("StrictModes", "yes", "H-SSH-09"),
+    (
+        "PermitTunnel",
+        "no",
+        "H-SSH-13 — builds a layer-3 tunnel straight through the box. On a router "
+        "this defeats the router.",
+    ),
+    (
+        "AllowTcpForwarding",
+        "no",
+        "H-SSH-14 — turns one session into arbitrary access to anything the box reaches",
+    ),
+    (
+        "AllowAgentForwarding",
+        "no",
+        "H-SSH-15 — a compromised box can use your agent to reach onward hosts as you",
+    ),
+    ("GatewayPorts", "no", "H-SSH-16"),
+    ("X11Forwarding", "no", "H-SSH-17"),
+    ("PermitUserEnvironment", "no", "H-SSH-18"),
+    (
+        "LogLevel",
+        "VERBOSE",
+        "H-SSH-19 — logs the key fingerprint on every successful login, which is what "
+        "ties a change to the key that made it",
+    ),
+)
+
+DROP_IN_PATH = "/etc/ssh/sshd_config.d/50-btht.conf"
+
+
+@dataclass(frozen=True, slots=True)
+class RouterPolicy:
+    """What the router must permit *to itself*. Nothing here concerns transit."""
+
+    name: str
+    #: Networks the operator manages the box from. Empty is refused — a default-drop
+    #: input chain with no management source is a lockout, not a hardening measure.
+    mgmt_sources: tuple[str, ...] = ()
+    #: Addresses this router forms routing adjacencies with.
+    peers: tuple[str, ...] = ()
+    #: Which of those adjacencies to permit. OSPF is IP protocol 89; BGP is TCP 179.
+    ospf: bool = True
+    bgp: bool = False
+    #: Accounts permitted to log in at all — `H-SSH-10`, the check that most directly
+    #: defeats an account an attacker created.
+    allow_groups: tuple[str, ...] = ()
+    #: `H-SSH-11`. Listening on the management address alone does more work than most
+    #: firewall rules: if sshd is not on the segment, no ordering mistake exposes it.
+    listen_address: str = ""
+    extra_services: tuple[tuple[str, int], ...] = field(default_factory=tuple)
+
+
+class RefusedToGenerate(Exception):
+    """Raised rather than emitting something that would lock the operator out."""
+
+
+def _v6(text: str) -> bool:
+    return ":" in text
+
+
+def _set(values: tuple[str, ...]) -> str:
+    return "{ " + ", ".join(values) + " }"
+
+
+def sshd_drop_in(policy: RouterPolicy) -> str:
+    """A drop-in file, never an edit to `sshd_config`.
+
+    Two reasons. An edited `sshd_config` is indistinguishable from an edited
+    `sshd_config`, so the monitor cannot tell your hardening from someone else's
+    change; a separate file leaves the original intact and comparable. And a package
+    update rewrites `sshd_config` and leaves drop-ins alone.
+    """
+    lines = [
+        f"# {DROP_IN_PATH}",
+        f"# Control-plane SSH hardening for {policy.name}, generated by BTHT.",
+        "#",
+        "# sshd takes the FIRST value it obtains for each keyword, so this file only",
+        "# takes effect if the Include line in sshd_config appears ABOVE any of these",
+        "# settings. Check with:  grep -n Include /etc/ssh/sshd_config",
+        "# Then test the result before you rely on it:  sshd -t && sshd -T | sort",
+        "#",
+        "# Keep an existing session open while you reload. If it locks you out you want",
+        "# a shell already on the box, not a console booking.",
+        "",
+    ]
+    for setting, value, reason in SSHD_SETTINGS:
+        lines.append(f"# {reason}")
+        lines.append(f"{setting} {value}")
+        lines.append("")
+    if policy.allow_groups:
+        lines += [
+            "# H-SSH-10 — an account created by an attacker cannot log in even with a",
+            "# valid key. Removing yourself from this list locks you out.",
+            "AllowGroups " + " ".join(policy.allow_groups),
+            "",
+        ]
+    if policy.listen_address:
+        lines += [
+            "# H-SSH-11 — bind to the management path only.",
+            f"ListenAddress {policy.listen_address}",
+            "",
+        ]
+    lines += [
+        "# H-SSH-20 is not settable here: send auth events to a remote collector, because",
+        "# logs on a box the attacker controls are evidence the attacker controls.",
+    ]
+    return "\n".join(lines) + "\n"
+
+
+def control_plane_nft(policy: RouterPolicy) -> str:
+    """An `input`-only nftables ruleset. Refuses to emit without a management source."""
+    if not policy.mgmt_sources:
+        raise RefusedToGenerate(
+            f"{policy.name}: no management source declared. A default-drop input chain "
+            "with nothing permitted to reach port 22 is a lockout, not a hardening "
+            "measure. Declare where you manage this router from and generate again."
+        )
+
+    v4_mgmt = tuple(s for s in policy.mgmt_sources if not _v6(s))
+    v6_mgmt = tuple(s for s in policy.mgmt_sources if _v6(s))
+    v4_peers = tuple(p for p in policy.peers if not _v6(p))
+    v6_peers = tuple(p for p in policy.peers if _v6(p))
+
+    out = [
+        f"# Control-plane protection for {policy.name}, generated by BTHT.",
+        "#",
+        "# This filters traffic addressed TO this router. It defines an input chain and",
+        "# nothing else — no forward chain, no output chain — so forwarded traffic is",
+        "# not inspected and throughput is unaffected.",
+        "#",
+        "# nftables evaluates every table, and a drop in any base chain is final. This",
+        "# chain therefore takes effect regardless of what your other tables permit.",
+        "# Read the accept list below and satisfy yourself your own access is in it.",
+        "#",
+        "# Apply it the way that cannot lock you out:",
+        "#   nft -c -f 50-btht-ctrl.nft      # check it parses, change nothing",
+        "#   nft -f 50-btht-ctrl.nft         # apply, with a session already open",
+        "# If you lose the box, a reboot clears it unless you have made it persistent.",
+        "",
+        "table inet btht_ctrl {",
+        "  chain input {",
+        "    type filter hook input priority 0; policy drop;",
+        "",
+        "    # Replies to things this box started, and its own loopback.",
+        "    ct state established,related accept",
+        "    ct state invalid drop",
+        "    iif lo accept",
+        "",
+        "    # ICMP stays. Dropping it breaks path MTU discovery, and OSPFv3 runs on",
+        "    # ICMPv6 — a v6 adjacency dies without this line.",
+        "    ip protocol icmp icmp type { echo-request, destination-unreachable, "
+        "time-exceeded, parameter-problem } accept",
+        "    ip6 nexthdr icmpv6 accept",
+        "",
+        "    # Management. H-SSH-11 does the same job at the daemon; both is better.",
+    ]
+    if v4_mgmt:
+        out.append(f"    ip saddr {_set(v4_mgmt)} tcp dport 22 accept")
+    if v6_mgmt:
+        out.append(f"    ip6 saddr {_set(v6_mgmt)} tcp dport 22 accept")
+    if not v6_mgmt:
+        out.append("    # No IPv6 management source declared, so IPv6 SSH is not permitted. If")
+        out.append("    # you manage this box over IPv6, declare that source and regenerate.")
+
+    if policy.peers and (policy.ospf or policy.bgp):
+        out += [
+            "",
+            "    # Routing adjacencies, to declared neighbours only. H-FRR-06: no",
+            "    # dynamic or listen ranges, because a neighbour you did not name is a",
+            "    # neighbour somebody else chose.",
+        ]
+        if policy.ospf:
+            if v4_peers:
+                out.append(f"    ip saddr {_set(v4_peers)} ip protocol ospf accept")
+            if v6_peers:
+                out.append(f"    ip6 saddr {_set(v6_peers)} meta l4proto 89 accept")
+        if policy.bgp:
+            if v4_peers:
+                out.append(f"    ip saddr {_set(v4_peers)} tcp dport 179 accept")
+            if v6_peers:
+                out.append(f"    ip6 saddr {_set(v6_peers)} tcp dport 179 accept")
+    elif policy.ospf or policy.bgp:
+        out += [
+            "",
+            "    # No routing neighbours declared, so no adjacency is permitted to form.",
+            "    # If this router peers with anything, declare it and regenerate — the",
+            "    # adjacency will not come up until you do.",
+        ]
+
+    for label, port in policy.extra_services:
+        out += ["", f"    # {label}"]
+        if v4_mgmt:
+            out.append(f"    ip saddr {_set(v4_mgmt)} tcp dport {port} accept")
+        if v6_mgmt:
+            out.append(f"    ip6 saddr {_set(v6_mgmt)} tcp dport {port} accept")
+
+    out += [
+        "",
+        "    # Everything else addressed to this box is dropped, and said so once a",
+        "    # minute. The rate limit is deliberate: an unlimited log line here is a",
+        "    # way to fill the disk of the box you were protecting.",
+        '    limit rate 5/minute log prefix "btht-ctrl-drop " level info',
+        "  }",
+        "}",
+    ]
+    return "\n".join(out) + "\n"
+
+
+def checklist(policy: RouterPolicy) -> str:
+    """What to do with the two files, in the order that does not end in a lockout."""
+    return "\n".join(
+        [
+            f"# {policy.name} — control-plane hardening",
+            "",
+            "Two files. Apply them in this order, with a session already open on the box.",
+            "",
+            "## 1. Keep a way back in",
+            "",
+            "Open a second SSH session now and leave it open. Every step below can lock",
+            "you out, and every one of them is recoverable if you still have a shell.",
+            "",
+            "## 2. The control-plane ruleset",
+            "",
+            "    nft -c -f 50-btht-ctrl.nft      # parses? changes nothing",
+            "    nft -f 50-btht-ctrl.nft         # apply",
+            "",
+            "Then, from your management address, confirm you can still reach port 22 in a",
+            "*new* session. The one you kept open survives on conntrack whether or not the",
+            "rule is right, so it proves nothing on its own.",
+            "",
+            "Check the routing did not move:",
+            "",
+            "    vtysh -c 'show ip ospf neighbor'",
+            "    vtysh -c 'show bgp summary'",
+            "",
+            "Transit traffic is unaffected by design — this ruleset has no forward chain.",
+            "",
+            "## 3. The sshd drop-in",
+            "",
+            f"    # place at {DROP_IN_PATH}",
+            "    grep -n Include /etc/ssh/sshd_config    # must appear above the settings",
+            "    sshd -t                                 # syntax",
+            "    sshd -T | sort                          # what sshd will actually use",
+            "    systemctl reload ssh",
+            "",
+            "Then open a new session before closing the old one.",
+            "",
+            "## 4. What this does not do",
+            "",
+            "It does not set `passive-interface default` (H-FRR-04) or adjacency",
+            "authentication (H-FRR-05). Those live in the FRR configuration and are the",
+            "two that stop a foothold on an attached segment becoming a routing peer.",
+            "This ruleset makes them harder to reach; it does not replace them.",
+            "",
+        ]
+    )

@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% set page = "rules" %}
+{% block body %}
+<div class="crumb"><a href="/rules">Rules</a> →
+  <a href="/rules/routers/list">routers</a> → {{ node.name }}</div>
+<h1>{{ node.name }}</h1>
+<p class="sub">FRR · <code>{{ node.mgmt_address }}</code>. Two files: SSH hardening, and a
+firewall for the router itself.</p>
+
+<style>
+.filebox{font-family:var(--mono);font-size:12px;white-space:pre;overflow:auto;
+  max-height:400px;background:var(--bg);border:1px solid var(--line);border-radius:6px;
+  padding:12px 14px}
+</style>
+
+<div class="note warn"><strong>This protects the box, not the traffic through it.</strong>
+The generated ruleset defines an <code>input</code> chain and nothing else — no forward
+chain, no output chain — so what the router forwards is not inspected and throughput is
+unaffected. That is asserted by a test, not just intended.</div>
+
+<div class="panel">
+<h2 style="margin-top:0">What this router must permit to itself</h2>
+<p class="sub" style="margin-bottom:10px">Worked out from what you have already declared.
+Change anything here and it stays changed until you reset it.</p>
+<form method="post" action="/rules/routers/{{ node.name }}">
+  <label>managed from — networks or addresses, comma separated</label>
+  <input name="mgmt_sources" value="{{ policy.mgmt_sources|join(', ') }}"
+         placeholder="10.20.0.0/24, fd00:20::/64">
+  <div class="sub hint">
+    {% if derived_mgmt %}From the <code>Mgmt_Sources</code> alias:
+      <code>{{ derived_mgmt|join(", ") }}</code>.
+    {% else %}No <code>Mgmt_Sources</code> alias declared in your policy, so this must be
+      typed. If you get it wrong you lose access to the router.{% endif %}
+    Include an IPv6 source if you ever manage this box over IPv6 — otherwise IPv6 SSH is
+    not permitted.
+  </div>
+
+  <label>routing neighbours — addresses, comma separated</label>
+  <input name="peers" value="{{ policy.peers|join(', ') }}" placeholder="10.1.1.2">
+  <div class="sub hint">
+    {% if derived_peers %}From the firewall interfaces that name this router as an
+      upstream: <code>{{ derived_peers|join(", ") }}</code>.
+    {% else %}No firewall interface names this router as an upstream yet. Set that on the
+      WAN interface in <a href="/range">Range</a> and this fills itself in.{% endif %}
+    An adjacency with anything not listed here will not come up.
+  </div>
+
+  <label>which adjacencies</label>
+  <div class="checkgroup">
+    <label class="check"><input type="checkbox" name="ospf" value="1"
+      {% if policy.ospf %}checked{% endif %}> OSPF</label>
+    <label class="check"><input type="checkbox" name="bgp" value="1"
+      {% if policy.bgp %}checked{% endif %}> BGP</label>
+  </div>
+
+  <label>accounts permitted to log in — groups, comma separated</label>
+  <input name="allow_groups" value="{{ policy.allow_groups|join(', ') }}" placeholder="wheel">
+  <div class="sub hint">H-SSH-10. An account someone else created cannot log in even with
+  a valid key. Leave empty to omit it — and make sure your own account is in a listed
+  group before you use it.</div>
+
+  <label>bind SSH to one address only — optional</label>
+  <input name="listen_address" value="{{ policy.listen_address }}" placeholder="10.20.0.9">
+  <div class="sub hint">H-SSH-11. If sshd is not listening on a segment, no rule ordering
+  mistake can expose it.</div>
+
+  <button class="btn" type="submit">Save</button>
+</form>
+<form method="post" action="/rules/routers/{{ node.name }}/reset" class="popout-remove">
+  <button class="btn quiet" type="submit">Reset to what the range says</button>
+</form>
+</div>
+
+{% if refused %}
+<div class="note err"><strong>Refusing to generate.</strong> {{ refused }}</div>
+{% else %}
+
+<div class="panel">
+<h2 style="margin-top:0">1 · Do this in order</h2>
+<div class="filebox">{{ steps }}</div>
+<p><a class="btn quiet" href="/rules/routers/{{ node.name }}/file/steps">Open as text</a></p>
+</div>
+
+<div class="panel">
+<h2 style="margin-top:0">2 · <code>50-btht-ctrl.nft</code> — the router's own firewall</h2>
+<div class="filebox">{{ nft }}</div>
+<p><a class="btn" href="/rules/routers/{{ node.name }}/file/nft">Open as text</a></p>
+</div>
+
+<div class="panel">
+<h2 style="margin-top:0">3 · <code>50-btht.conf</code> — SSH hardening</h2>
+<div class="filebox">{{ sshd }}</div>
+<p><a class="btn" href="/rules/routers/{{ node.name }}/file/sshd">Open as text</a></p>
+</div>
+{% endif %}
+{% endblock %}
