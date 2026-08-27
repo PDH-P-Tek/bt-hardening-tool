@@ -24,7 +24,7 @@ from __future__ import annotations
 from typing import Any
 
 from btht.app.model.estate import Estate, Firewall, Host, HostGroup, Interface, Node
-from btht.app.model.services import Catalogue, HostType, Service
+from btht.app.model.services import Catalogue, HostType, Service, services_for
 
 Field = dict[str, Any]
 
@@ -142,7 +142,11 @@ def host_fields(
         {
             "name": "services",
             "label": "Services it runs",
-            "value": list(host.services) if host else [],
+            # The template's set when nothing was declared, so opening an existing
+            # machine shows what it actually runs rather than an empty list.
+            "value": list(services_for(catalogue, host.service_role, host.services))
+            if host
+            else [],
             "checkboxes": sorted(catalogue.services),
             "hint": "Ports come from the service catalogue, so you pick RDP, not 3389.",
         },
@@ -201,10 +205,12 @@ def group_fields(
         ),
         {
             "name": "services",
-            "label": "Services",
-            "value": list(group.services) if group else [],
+            "label": "Services they run",
+            "value": list(services_for(catalogue, group.host_type, group.services))
+            if group
+            else [],
             "checkboxes": sorted(catalogue.services),
-            "hint": "Leave unticked to use the template's.",
+            "hint": "Ports come from the service catalogue, so you pick RDP, not 3389.",
         },
     ]
 

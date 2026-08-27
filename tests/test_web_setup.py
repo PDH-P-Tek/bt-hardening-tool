@@ -482,3 +482,32 @@ def test_a_router_something_still_peers_with_is_not_removed(client: TestClient) 
     )
     response = client.post("/range/routers/r1/delete", follow_redirects=False)
     assert "alpha/opt1" in response.headers["location"], "the refusal names what still peers"
+
+
+def test_services_ticked_when_adding_a_group_are_kept(client: TestClient, tmp_path: Path) -> None:
+    """They were not accepted by the route at all, so every one was discarded on entry."""
+    make_estate(client)
+    client.post(
+        "/range/enclaves",
+        data={"name": "alpha", "platform": "pfsense", "mgmt_address": "10.0.0.1"},
+        follow_redirects=False,
+    )
+    client.post(
+        "/range/enclaves/alpha/interfaces",
+        data={"ifname": "lan", "role": "ws", "v4": "192.0.2.1/24"},
+        follow_redirects=False,
+    )
+    client.post(
+        "/range/enclaves/alpha/groups",
+        data={
+            "name_prefix": "ws1",
+            "count": "3",
+            "segment_role": "ws",
+            "v4_start": "192.0.2.11",
+            "services": ["SSH"],
+        },
+        follow_redirects=False,
+    )
+    estate = load_estate(tmp_path / "estates" / "range.yaml")
+    group = estate.firewalls[0].host_groups[0]
+    assert group.services == ("SSH",)

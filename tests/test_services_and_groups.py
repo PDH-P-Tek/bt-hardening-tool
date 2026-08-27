@@ -413,7 +413,53 @@ def test_adding_a_machine_does_not_ask_which_segment() -> None:
     assert adding["value"] == "svrs"
 
     existing = Host(hostname="dc01", segment_role="svrs")
-    editing = next(
-        f for f in host_fields(catalogue, existing) if f["name"] == "segment_role"
-    )
+    editing = next(f for f in host_fields(catalogue, existing) if f["name"] == "segment_role")
     assert not editing.get("hidden"), "moving a host between segments is a real edit"
+
+
+def test_a_machine_shows_what_it_runs_even_when_it_came_from_a_template() -> None:
+    """The table, the edit form and the generated rules must agree.
+
+    A group created from a template stored no services of its own, so the services
+    column was blank and the edit form opened with nothing ticked — while the rules
+    generated for those same machines used the template's set. The tool was showing one
+    thing and doing another.
+    """
+    from btht.app.model.services import Catalogue, HostType, Service, services_for
+
+    catalogue = Catalogue(
+        services={"RDP": Service(name="RDP", tcp=(3389,))},
+        host_types={"windows_workstation": HostType(name="windows_workstation", services=("RDP",))},
+    )
+    assert services_for(catalogue, "windows_workstation", ()) == ("RDP",)
+
+
+def test_what_was_declared_always_wins_over_the_template() -> None:
+    """The template is a starting point. An override must not be quietly re-expanded."""
+    from btht.app.model.services import Catalogue, HostType, Service, services_for
+
+    catalogue = Catalogue(
+        services={"RDP": Service(name="RDP"), "SSH": Service(name="SSH")},
+        host_types={"windows_workstation": HostType(name="windows_workstation", services=("RDP",))},
+    )
+    assert services_for(catalogue, "windows_workstation", ("SSH",)) == ("SSH",)
+
+
+def test_an_unknown_template_resolves_to_nothing_rather_than_raising() -> None:
+    from btht.app.model.services import Catalogue, services_for
+
+    assert services_for(Catalogue(), "no_such_type", ()) == ()
+
+
+def test_editing_a_templated_group_opens_with_its_services_ticked() -> None:
+    from pathlib import Path
+
+    from btht.app.model.estate import HostGroup
+    from btht.app.model.services import load_catalogue
+    from btht.app.web.forms import group_fields
+
+    catalogue = load_catalogue(Path(__file__).resolve().parents[1] / "service-catalogue.yaml")
+    kind = next(iter(catalogue.host_types.values()))
+    group = HostGroup(name_prefix="ws1", count=10, host_type=kind.name, segment_role="ws")
+    field = next(f for f in group_fields(catalogue, group) if f["name"] == "services")
+    assert field["value"] == list(kind.services)

@@ -21,9 +21,7 @@ from btht.app.model.policy import FirewallPolicy, Policy
 from btht.app.web.guide import Step, next_step, plan
 
 
-def a_firewall(
-    *, interfaces: tuple[Interface, ...] = (), hosts: tuple[Host, ...] = ()
-) -> Firewall:
+def a_firewall(*, interfaces: tuple[Interface, ...] = (), hosts: tuple[Host, ...] = ()) -> Firewall:
     return Firewall(
         enclave="do",
         fqdn="do.example",

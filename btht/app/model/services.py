@@ -90,6 +90,23 @@ class HostType:
     custom: bool = False
 
 
+def services_for(
+    catalogue: Catalogue, host_type: str, explicit: tuple[str, ...] = ()
+) -> tuple[str, ...]:
+    """What a machine actually runs: what was declared, or its template's set.
+
+    One definition, because three places needed the answer and disagreed. A group
+    created from a template stored no services of its own, so the table showed a blank
+    services column and the edit form opened with nothing ticked — while the rules
+    generated for those same machines used the template's set. The tool was telling the
+    operator one thing and doing another.
+    """
+    if explicit:
+        return explicit
+    kind = catalogue.host_types.get(host_type)
+    return tuple(kind.services) if kind else ()
+
+
 @dataclass(frozen=True, slots=True)
 class Catalogue:
     services: dict[str, Service] = field(default_factory=dict)

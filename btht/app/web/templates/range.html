@@ -195,7 +195,9 @@ the alias, rule and NAT sections — no credentials are stored.</p>
     <td><strong>{{ g.name_prefix }}</strong> <span class="tag">{{ g.count }} hosts</span></td>
     <td>{{ g.os }}</td>
     <td><code>{{ g.v4_start or "" }}{% if g.count > 1 %} +{{ g.count - 1 }}{% endif %}</code></td>
-    <td>{{ g.host_type }}</td><td>{{ g.services|join(", ") }}</td>
+    <td>{{ g.host_type }}</td>
+    <td>{{ group_services[g.name_prefix]|join(", ") or "—" }}
+      {% if inherited[g.name_prefix] %}<span class="tag">from template</span>{% endif %}</td>
     <td>{{ form.opener("edit-group-" ~ g.name_prefix, "Edit") }}</td>
   </tr>
   {% endfor %}
@@ -203,7 +205,9 @@ the alias, rule and NAT sections — no credentials are stored.</p>
   <tr>
     <td>{{ h.hostname }}{% if h.out_of_bounds %} <span class="tag warn">out of bounds</span>{% endif %}</td>
     <td>{{ h.os }}</td><td><code>{{ h.v4 or "" }}</code></td>
-    <td>{{ h.service_role }}</td><td>{{ h.services|join(", ") }}</td>
+    <td>{{ h.service_role }}</td>
+    <td>{{ host_services[h.hostname]|join(", ") or "—" }}
+      {% if inherited[h.hostname] %}<span class="tag">from template</span>{% endif %}</td>
     <td>{{ form.opener("edit-host-" ~ h.hostname, "Edit") }}</td>
   </tr>
   {% endfor %}

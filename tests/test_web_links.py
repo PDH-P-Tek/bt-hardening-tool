@@ -68,9 +68,7 @@ def furnished(client: TestClient) -> TestClient:
 def internal_links(body: str) -> set[str]:
     """Only links this app is responsible for — not `#`, `mailto:` or anything remote."""
     return {
-        href
-        for href in HREF.findall(body)
-        if href.startswith("/") and not href.startswith("//")
+        href for href in HREF.findall(body) if href.startswith("/") and not href.startswith("//")
     }
 
 

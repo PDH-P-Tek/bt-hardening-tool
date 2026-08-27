@@ -78,6 +78,7 @@ from btht.app.model.services import (
     Confidence,
     HostType,
     Service,
+    services_for,
 )
 from btht.app.model.services import (
     load_catalogue as load_services,
@@ -244,6 +245,18 @@ def _range_page(
         },
         edit_host_fields={h.hostname: forms.host_fields(catalogue, h) for h in hosts},
         edit_group_fields={g.name_prefix: forms.group_fields(catalogue, g) for g in groups},
+        # What each machine actually runs, resolved once here so the table cannot
+        # disagree with the edit form or with the rules that get generated.
+        host_services={
+            h.hostname: services_for(catalogue, h.service_role, h.services) for h in hosts
+        },
+        group_services={
+            g.name_prefix: services_for(catalogue, g.host_type, g.services) for g in groups
+        },
+        inherited={
+            **{h.hostname: not h.services and bool(h.service_role) for h in hosts},
+            **{g.name_prefix: not g.services and bool(g.host_type) for g in groups},
+        },
         edit_router_fields={n.name: forms.router_fields(n) for n in estate.nodes},
         edit_enclave_fields=forms.enclave_fields([], firewall) if firewall else [],
         messages=messages
@@ -2020,10 +2033,7 @@ def add_host(
     path = estate_path()
     estate = load_estate(path)
     catalogue = load_services(SERVICE_CATALOGUE)
-    chosen = tuple(s for s in services if s)
-    if not chosen and host_type:
-        host_type_entry = catalogue.host_types.get(host_type)
-        chosen = tuple(host_type_entry.services) if host_type_entry else ()
+    chosen = services_for(catalogue, host_type.strip(), tuple(s for s in services if s))
 
     try:
         addresses = _addresses(v4=v4, v6=v6)
@@ -2062,14 +2072,22 @@ def add_group(
     os: str = Form(""),
     host_type: str = Form(""),
     segment_role: str = Form(""),
+    services: list[str] = Form(default=[]),
     v4_start: str = Form(""),
     v6_prefix: str = Form(""),
     ifname: str = Form(""),
 ) -> RedirectResponse:
-    """Many machines of one kind. Ten workstations is one declaration, not ten."""
+    """Many machines of one kind. Ten workstations is one declaration, not ten.
+
+    Services resolve exactly as they do for a single machine. They were not accepted
+    here at all, so every service ticked while adding a group was discarded on the way
+    in — and the group then showed an empty services column it had no way to fill.
+    """
     from dataclasses import replace as dc_replace
 
     path = estate_path()
+    catalogue = load_services(SERVICE_CATALOGUE)
+    chosen = services_for(catalogue, host_type.strip(), tuple(s for s in services if s))
     try:
         group = HostGroup(
             name_prefix=name_prefix.strip(),
@@ -2079,6 +2097,7 @@ def add_group(
             os=os.strip(),
             host_type=host_type.strip(),
             segment_role=segment_role.strip(),
+            services=chosen,
             v4_start=_addresses(v4_start=v4_start)["v4_start"],
             v6_prefix=v6_prefix.strip(),
         )
