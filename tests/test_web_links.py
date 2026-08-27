@@ -112,3 +112,19 @@ def test_the_template_libraries_are_reachable_from_the_range_page(
 def test_every_library_page_offers_a_way_back(furnished: TestClient) -> None:
     for page in ("/host-templates", "/services", "/segments"):
         assert '/range"' in furnished.get(page).text, f"{page} is a dead end"
+
+
+def test_the_add_tile_is_always_last(furnished: TestClient) -> None:
+    """Routers first, enclaves in the middle, add at the end.
+
+    A control that shifts position as the range grows is one you have to hunt for each
+    time, and adding an enclave is exactly the thing done repeatedly in one sitting.
+    """
+    import re
+
+    body = furnished.get("/range").text
+    block = re.search(r"<h2>The range</h2>\s*<div class=\"tiles\">(.*?)\n</div>", body, re.S)
+    assert block is not None
+    headings = re.findall(r"<h3>(.*?)</h3>", block.group(1))
+    assert headings[0] == "Routers"
+    assert headings[-1] == "Add an enclave"

@@ -48,8 +48,15 @@
 </div>
 
 {# ---- level 1: enclaves ---------------------------------------------- #}
-<h2>Enclaves</h2>
+<h2>The range</h2>
+{# Routers first because everything peers with them, then the enclaves, and "add" is
+   always the last tile — a control that moves as the range grows is one you hunt for. #}
 <div class="tiles">
+  <a class="tile {% if showing_routers %}here{% endif %}" href="/range?routers=1">
+    <span class="count">{{ routers|length }}</span>
+    <h3>Routers</h3>
+    <p>What the firewalls peer with</p>
+  </a>
   {% for f in estate.firewalls %}
   <div class="tile {% if f.enclave == selected_enclave %}here{% endif %}">
     <a href="/range?enclave={{ f.enclave }}">
@@ -62,11 +69,6 @@
   <button type="button" class="tile add" data-opens="add-enclave">
     <span class="count">+</span><h3>Add an enclave</h3><p>A firewall and its segments</p>
   </button>
-  <a class="tile {% if showing_routers %}here{% endif %}" href="/range?routers=1">
-    <span class="count">{{ routers|length }}</span>
-    <h3>Routers</h3>
-    <p>What the firewalls peer with</p>
-  </a>
 </div>
 
 {% if showing_routers %}
