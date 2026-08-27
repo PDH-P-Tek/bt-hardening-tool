@@ -361,3 +361,59 @@ def test_host_groups_get_the_same_treatment() -> None:
     catalogue = load_catalogue(Path(__file__).resolve().parents[1] / "service-catalogue.yaml")
     field = next(f for f in group_fields(catalogue) if f["name"] == "host_type")
     assert "fills" in field
+
+
+def test_the_template_list_names_the_operating_system() -> None:
+    """An estate has several kinds of workstation differing only by version.
+
+    `windows_workstation` alone does not say which one you are about to create, so the
+    option is labelled with its OS while still submitting the bare name.
+    """
+    from pathlib import Path
+
+    from btht.app.model.services import load_catalogue
+    from btht.app.web.forms import host_fields
+
+    catalogue = load_catalogue(Path(__file__).resolve().parents[1] / "service-catalogue.yaml")
+    field = next(f for f in host_fields(catalogue) if f["name"] == "host_type")
+    labelled = [o for o in field["options"] if isinstance(o, dict)]
+    assert labelled, "options must carry a label distinct from the submitted value"
+    for option in labelled:
+        kind = catalogue.host_types[option["value"]]
+        if kind.default_os:
+            assert kind.default_os in option["label"]
+        assert option["value"] == kind.name, "the name is still what gets submitted"
+
+
+def test_the_template_question_comes_before_what_it_answers() -> None:
+    """Asking it last means typing the answers first, then having them overwritten."""
+    from pathlib import Path
+
+    from btht.app.model.services import load_catalogue
+    from btht.app.web.forms import host_fields
+
+    catalogue = load_catalogue(Path(__file__).resolve().parents[1] / "service-catalogue.yaml")
+    order = [f["name"] for f in host_fields(catalogue)]
+    assert order.index("host_type") == 1
+    assert order.index("host_type") < order.index("os")
+    assert order.index("host_type") < order.index("services")
+
+
+def test_adding_a_machine_does_not_ask_which_segment() -> None:
+    """You got here by opening a segment. It is still submitted, just not asked."""
+    from pathlib import Path
+
+    from btht.app.model.estate import Host
+    from btht.app.model.services import load_catalogue
+    from btht.app.web.forms import host_fields
+
+    catalogue = load_catalogue(Path(__file__).resolve().parents[1] / "service-catalogue.yaml")
+    adding = next(f for f in host_fields(catalogue, segment="svrs") if f["name"] == "segment_role")
+    assert adding["hidden"] is True
+    assert adding["value"] == "svrs"
+
+    existing = Host(hostname="dc01", segment_role="svrs")
+    editing = next(
+        f for f in host_fields(catalogue, existing) if f["name"] == "segment_role"
+    )
+    assert not editing.get("hidden"), "moving a host between segments is a real edit"

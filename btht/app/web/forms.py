@@ -8,8 +8,9 @@ still had a comma-separated text box for the same value.
 A field is a dictionary rather than a class because a template reads it. The shapes:
 
     text        {name, label, value, hint, placeholder}
-    select      + {options: [...]}
+    select      + {options: [...]}, an option is a string or {value, label}
     checkboxes  + {checkboxes: [...]}, value is a list
+    hidden      + {hidden: True} — submitted, never shown
 
 A select may also carry `fills`: a map from option to the other fields that option
 should populate. Picking a host template then fills in the operating system and ticks
@@ -34,6 +35,22 @@ def _template_fills(catalogue: Catalogue) -> dict[str, dict[str, Any]]:
         name: {"os": kind.default_os, "services": list(kind.services)}
         for name, kind in catalogue.host_types.items()
     }
+
+
+def _template_options(catalogue: Catalogue) -> list[Any]:
+    """Templates named with the operating system they carry.
+
+    An estate has several kinds of workstation that differ only by version, and
+    `windows_workstation` on its own does not say which one you are about to create.
+    The name is still what gets submitted — the OS is there to pick by.
+    """
+    options: list[Any] = [""]
+    for name in sorted(catalogue.host_types):
+        kind = catalogue.host_types[name]
+        options.append(
+            {"value": name, "label": f"{name} — {kind.default_os}" if kind.default_os else name}
+        )
+    return options
 
 
 def _text(name: str, label: str, value: Any = "", **extra: Any) -> Field:
@@ -88,8 +105,26 @@ def host_fields(
     host: Host | None = None,
     segment: str = "",
 ) -> list[Field]:
+    """`host` is None when adding, which changes two things.
+
+    The template question comes second, straight after the name, because answering it
+    fills in most of what follows — asking it last means typing the answers first. And
+    the segment is not asked at all: you got here by opening a segment, so the machine
+    goes on that one. It stays editable when amending an existing host, which is the
+    only time moving one between segments makes sense.
+    """
+    adding = host is None
     return [
         _text("hostname", "Hostname", host.hostname if host else "", placeholder="dc01"),
+        {
+            "name": "host_type",
+            "label": "What kind of machine is this?",
+            "value": host.service_role if host else "",
+            "options": _template_options(catalogue),
+            "fills": _template_fills(catalogue),
+            "hint": "Picking one fills in the operating system and ticks what it runs. "
+            "Change anything you like afterwards — the template is a starting point.",
+        },
         _text(
             "os",
             "Operating system",
@@ -98,15 +133,11 @@ def host_fields(
         ),
         _text("v4", "IPv4", host.v4 if host else "", placeholder="25.42.10.11"),
         _text("v6", "IPv6", host.v6 if host else "", placeholder="fd81:25:42:10::11"),
-        _text("segment_role", "Segment", host.segment_role if host else segment),
         {
-            "name": "host_type",
-            "label": "What kind of machine is this?",
-            "value": host.service_role if host else "",
-            "options": ["", *sorted(catalogue.host_types)],
-            "fills": _template_fills(catalogue),
-            "hint": "Picking one fills in the operating system and ticks what it runs. "
-            "Change anything you like afterwards — the template is a starting point.",
+            "name": "segment_role",
+            "label": "Segment",
+            "value": host.segment_role if host else segment,
+            "hidden": adding,
         },
         {
             "name": "services",
@@ -139,16 +170,21 @@ def group_fields(
         _text("count", "How many", group.count if group else 10),
         _text("first_index", "First number", group.first_index if group else 1),
         _text("index_width", "Digits in the number", group.index_width if group else 2),
-        _text("os", "Operating system", group.os if group else "", placeholder="Windows 10 22H2"),
         {
             "name": "host_type",
             "label": "What kind of machine are these?",
             "value": group.host_type if group else "",
-            "options": ["", *sorted(catalogue.host_types)],
+            "options": _template_options(catalogue),
             "fills": _template_fills(catalogue),
             "hint": "Picking one fills in the operating system and ticks what they run.",
         },
-        _text("segment_role", "Segment", group.segment_role if group else segment),
+        _text("os", "Operating system", group.os if group else "", placeholder="Windows 10 22H2"),
+        {
+            "name": "segment_role",
+            "label": "Segment",
+            "value": group.segment_role if group else segment,
+            "hidden": group is None,
+        },
         _text(
             "v4_start",
             "First IPv4",

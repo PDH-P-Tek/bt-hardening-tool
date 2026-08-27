@@ -1781,6 +1781,13 @@ def add_catalogue_service(
     note: str = Form(""),
 ) -> RedirectResponse:
     catalogue = load_services(SERVICE_CATALOGUE)
+    if name.strip() in catalogue.services:
+        return _services_back(
+            f"a service called {name.strip()} already exists. Edit that one rather than "
+            "adding a second — a duplicate name would replace it silently, and every "
+            "host template pointing at it would quietly change what ports it opens.",
+            "err",
+        )
     service = Service(
         name=name.strip(),
         tcp=_ports_from(tcp),
@@ -1878,6 +1885,14 @@ def add_host_type(
     descr: str = Form(""),
 ) -> RedirectResponse:
     catalogue = load_services(SERVICE_CATALOGUE)
+    if name.strip() in catalogue.host_types:
+        return _services_back(
+            f"a host template called {name.strip()} already exists. Templates are held "
+            "by name, so adding a second one under the same name would replace the "
+            "first without warning. Give this one a name of its own — "
+            f"{name.strip()}_win11, say — or edit the existing template instead.",
+            "err",
+        )
     host_type = HostType(
         name=name.strip(),
         services=tuple(s for s in services if s),

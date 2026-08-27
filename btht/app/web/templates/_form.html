@@ -8,6 +8,11 @@
 
 {% macro fields(items) %}
   {% for field in items %}
+    {% if field.hidden %}
+    {# Submitted but never asked. The add-a-machine form gets here from an open
+       segment, so asking which segment is asking something already answered. #}
+    <input type="hidden" name="{{ field.name }}" value="{{ field.value }}">
+    {% else %}
     <label for="f-{{ field.name }}">{{ field.label }}</label>
     {% if field.checkboxes is defined %}
       <div class="checkgroup">
@@ -25,11 +30,17 @@
          form, and so a form with no template behaves exactly as it did before. #}
       <select id="f-{{ field.name }}" name="{{ field.name }}"
               {% if field.fills is defined %}data-fills="{{ field.fills|tojson|forceescape }}"{% endif %}>
+        {# An option is either a plain string or {value, label}: several host templates
+           share a purpose and differ only by operating system, so the list has to say
+           which one you are picking while still submitting the name. #}
+        {% set values = [] %}
         {% for option in field.options %}
-        <option value="{{ option }}" {% if option == field.value %}selected{% endif %}>
-          {{ option or "—" }}</option>
+          {% set value = option.value if option is mapping else option %}
+          {% set _ = values.append(value) %}
+        <option value="{{ value }}" {% if value == field.value %}selected{% endif %}>
+          {{ (option.label if option is mapping else option) or "—" }}</option>
         {% endfor %}
-        {% if field.value and field.value not in field.options %}
+        {% if field.value and field.value not in values %}
         <option value="{{ field.value }}" selected>{{ field.value }}</option>
         {% endif %}
       </select>
@@ -38,6 +49,7 @@
              {% if field.placeholder %}placeholder="{{ field.placeholder }}"{% endif %}>
     {% endif %}
     {% if field.hint %}<div class="sub hint">{{ field.hint }}</div>{% endif %}
+    {% endif %}
   {% endfor %}
 {% endmacro %}
 
